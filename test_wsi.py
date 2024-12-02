@@ -15,14 +15,14 @@ import os
 import copy
 from mmengine.logging import MMLogger
 from cerwsi.utils import (KFBSlide, set_seed,)
-from cerwsi.nets import ValidClsNet, PNClsNet
+from cerwsi.nets import ValidClsNet, PatchClsNet
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
 PATCH_EDGE = 500
 CERTAIN_THR = 0.7
-POSITIVE_THR = 0.5
+NEGATIVE_THR = 0.5
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
     data_batch = dict(inputs=[], data_samples=[])
@@ -71,8 +71,8 @@ def inference_batch_pn(pn_model, valid_input, save_prefix):
     pred_result = []
     for idx,pred_output in enumerate(outputs):
         o_img = valid_input[idx]
-        pred_clsid = int(pred_output.pred_score[1] > POSITIVE_THR)
-        pred_result.append(pred_clsid)
+        pred_clsid = 0 if int(pred_output.pred_score[0] > NEGATIVE_THR) else 1
+        pred_result.append([pred_clsid, *[round(conf.item(), 6) for conf in pred_output.pred_score]])
         if args.visual_pred and str(pred_clsid) in args.visual_pred:
             timestamp = time.time()
             o_img.save(f'{save_prefix}/{pred_clsid}/{timestamp}.png')
@@ -124,8 +124,7 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
 
 
 def multiprocess_inference():
-    df_csv = pd.read_csv(args.test_csv_file)
-    all_kfb_info = [tuple(row) for row in df_csv.itertuples(index=False)]
+    all_kfb_info = pd.read_csv(args.test_csv_file)
 
     device = torch.device(args.device)
     valid_model = ValidClsNet()
@@ -136,7 +135,7 @@ def multiprocess_inference():
     if args.only_valid:
         pn_model = None
     else:
-        pn_model = PNClsNet()
+        pn_model = PatchClsNet(num_classes = args.num_classes)
         pn_model.to(device)
         pn_model.eval()
         pn_state_dict = torch.load(args.pn_model_ckpt)
@@ -151,10 +150,10 @@ def multiprocess_inference():
 
     pred_kfb_info = []
     low_valid_kfb_info = []
-    for idx, (kfb_path, kfb_clsid, kfb_clsname, patientId, kfb_source) in enumerate(all_kfb_info):
+    for row in all_kfb_info.itertuples(index=True):
         start_time = time.time()
         print('collecting start points... ')
-        slide = KFBSlide(kfb_path)
+        slide = KFBSlide(row.kfb_path)
         width, height = slide.level_dimensions[0]
         iw, ih = ceil(width/PATCH_EDGE), ceil(height/PATCH_EDGE)
         r2 = (int(max(iw, ih)*1.1)//2)**2
@@ -178,7 +177,7 @@ def multiprocess_inference():
         for proc_id, set_group in enumerate(set_split):
             p = workers.apply_async(process_patches,
                                     (proc_id, set_group, valid_model, pn_model,
-                                     kfb_path, patientId))
+                                     row.kfb_path, row.patientId))
             processes.append(p)
 
         valid_result, pn_result = [], []
@@ -194,18 +193,24 @@ def multiprocess_inference():
         curent_id = np.array(valid_result)
 
         if args.only_valid:
-            logger.info(f'\n[{idx+1}/{len(all_kfb_info)}] Time of {patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}, total: {len(slide_start_points)}')
+            logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}, total: {len(slide_start_points)}')
         else:
             pn_result = np.array(pn_result)
-            p_path_num = np.sum(pn_result)
-            n_patch_num = len(pn_result) - p_path_num
+            pn_result_patch_clsid = pn_result[:,0]
+            p_path_num = int(np.sum(pn_result_patch_clsid))
+            n_patch_num = len(pn_result_patch_clsid) - p_path_num
             p_ratio = p_path_num / (p_path_num + n_patch_num)
             pred_clsid = int(p_ratio > positive_ratio_thr)
-            logger.info(f'\n[{idx+1}/{len(all_kfb_info)}] Time of {patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}(positive:{p_path_num} negative:{n_patch_num} p_ratio:{p_ratio:0.4f} pred/true:{pred_clsid}/{kfb_clsid}-{kfb_clsname})')
-            pred_kfb_info.append([kfb_path, kfb_clsid, p_path_num, n_patch_num])
+            logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}(positive:{p_path_num} negative:{n_patch_num} p_ratio:{p_ratio:0.4f} pred/gt:{pred_clsid}/{row.kfb_clsid}-{row.kfb_clsname})')
+            pred_kfb_info.append([row.kfb_path, row.kfb_clsid, p_path_num, n_patch_num])
+            pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in pn_result[:, 1:]]
+            posi_confi_save_dir = f'{args.record_save_dir}/posi_conf'
+            os.makedirs(posi_confi_save_dir, exist_ok=True)
+            with open(f'{posi_confi_save_dir}/{row.patientId}.txt', 'w') as f:
+                f.writelines(pred_confi)
 
         if np.sum(curent_id[:,1]) <= 1000 or np.sum(curent_id[:,0]) > np.sum(curent_id[:,1])*2:
-            low_valid_kfb_info.append([kfb_path, kfb_clsid, kfb_clsname, patientId, kfb_source])
+            low_valid_kfb_info.append([row.kfb_path, row.kfb_clsid, row.kfb_clsname, row.patientId, row.kfb_source])
     
     if not args.only_valid:
         df_pred = pd.DataFrame(pred_kfb_info, columns=['kfb_path', 'kfb_clsid', 'p_path_num', 'n_patch_num'])
@@ -219,6 +224,7 @@ parser.add_argument('test_csv_file', type=str)
 parser.add_argument('valid_model_ckpt', type=str)
 parser.add_argument('pn_model_ckpt', type=str)
 parser.add_argument('--record_save_dir', type=str)
+parser.add_argument('--num_classes', type=int, default=2)
 parser.add_argument('--only_valid', action='store_true')
 # parser.add_argument('--visual_pred', action='store_true')
 parser.add_argument('--visual_pred', type=str, nargs='*', choices=['0', '1', 'invalid', 'valid', 'uncertain'])
@@ -239,12 +245,13 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 python test_wsi.py \
-    data_resource/cls_pn/1117_train.csv \
+    data_resource/optimize_0.csv \
     checkpoints/vlaid_cls_best.pth \
-    checkpoints/pn_cls_best/wxl1_resnet50.pth \
-    --record_save_dir log/optimize_valid \
-    --cpu_num 16 \
+    checkpoints/pn_cls_best/rcp_c6.pth \
+    --record_save_dir log/optimize_valid_visual \
+    --num_classes 6 \
+    --cpu_num 8 \
     --test_bs 64 \
-    --only_valid
+    --only_valid \
     --visual_pred invalid valid 1
 '''

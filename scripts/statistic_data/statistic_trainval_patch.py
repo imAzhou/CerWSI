@@ -2,6 +2,7 @@ import json
 from tqdm import tqdm
 from prettytable import PrettyTable
 import matplotlib.pyplot as plt
+import cv2
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -10,6 +11,7 @@ sns.set_theme(style="whitegrid")
 NEGATIVE_CLASS = ['NILM', 'GEC']
 ASC_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC']
 AGC_CLASS = ['AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
+area_types = ['negative','ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
 
 def draw_hist(area_data, save_path):
     # 定义直方图的分段节点
@@ -19,7 +21,8 @@ def draw_hist(area_data, save_path):
     axis_label.append('>448²')
 
     df_data = []
-    for area_type,area_value in area_data.items():
+    for area_type in area_types:
+        area_value = area_data[area_type]
         counts, bin_edges = np.histogram(area_value, bins=bins)
         for idx,bin_key in enumerate(axis_label):
             df_data.append([area_type, bin_key, counts[idx]])
@@ -28,14 +31,17 @@ def draw_hist(area_data, save_path):
     g = sns.catplot(
         data=df, kind="bar",
         x="bin_name", y="bin_count", hue="area_type",
-        height=6
+        height=6,
+        aspect=1.2
     )
     g.despine(left=True)
     g.set_axis_labels("", "count")
     g.legend.set_title("")
-    
+    g._legend.set_bbox_to_anchor((1., 0.7))
+    g.fig.subplots_adjust(right=0.73)
+
     # 自定义 legend 标签
-    new_labels = [f'{area_type}({len(area_value)})' for area_type,area_value in area_data.items()]
+    new_labels = [f'{area_type}({len(area_data[area_type])})' for area_type in area_types]
     for t, l in zip(g._legend.texts, new_labels):
         t.set_text(l)
 
@@ -87,14 +93,13 @@ def get_result(valid_imgs, mode):
     result_table.add_row(['num'] + sorted_values)
     print(result_table)
 
-    draw_hist(patch_clsname_areas, f'data_resource/cls_pn/statistic_results/area_dist_{mode}.png')
-    draw_hist(patch_clsname3_areas, f'data_resource/cls_pn/statistic_results/area_dist_in3_{mode}.png')
-
+    # draw_hist(patch_clsname_areas, f'data_resource/cls_pn/statistic_results/area_dist_{mode}.png')
+    # draw_hist(patch_clsname3_areas, f'data_resource/cls_pn/statistic_results/area_dist_in3_{mode}.png')
 
 def statistic_anno_json():
-    with open('data_resource/cls_pn/1117_anno_train.json','r') as f:
+    with open('data_resource/cls_pn/1127_anno_train.json','r') as f:
         train_data = json.load(f)
-    with open('data_resource/cls_pn/1117_anno_val.json','r') as f:
+    with open('data_resource/cls_pn/1127_anno_val.json','r') as f:
         val_data = json.load(f)
     
     # 统计项目：各类别数量（11 和 3 分类），面积分布
@@ -105,5 +110,35 @@ def statistic_anno_json():
         *val_data['valid_imgs'],
     ], 'total')
 
+def statistic_pn_trainval():
+    root_dir = 'data_resource/cls_pn/cut_img'
+    total_patch_clsname3_areas = dict()
+    for mode in ['train','val']:
+        mode_patch_clsname3_areas = dict()
+        with open(f'{root_dir}/{mode}_rcp.txt', 'r') as f:
+            mode_lines = f.readlines()
+        for line in tqdm(mode_lines, ncols=80):
+            relative_path = line.split(' ')[0]
+            patch_clsname = relative_path.split('/')[0]
+            img = cv2.imread(f'{root_dir}/random_cut/{relative_path}')
+            h,w,c = img.shape
+
+            clsnamein3 = ''
+            if patch_clsname in [*NEGATIVE_CLASS, 'rc_NILM']:
+                clsnamein3 = 'negative'
+            elif patch_clsname in ['HSIL','SCC']:
+                clsnamein3 = 'HSIL'
+            elif patch_clsname in AGC_CLASS:
+                clsnamein3 = 'AGC'
+            else:
+                clsnamein3 = patch_clsname
+            mode_patch_clsname3_areas.setdefault(clsnamein3, []).append(w * h)
+            total_patch_clsname3_areas.setdefault(clsnamein3, []).append(w * h)
+            
+        draw_hist(mode_patch_clsname3_areas, f'statistic_results/withrc_area_dist_in6_{mode}.png')
+    draw_hist(total_patch_clsname3_areas, f'statistic_results/withrc_area_dist_in6_total.png')
+
+
 if __name__ == '__main__':
-    statistic_anno_json()
+    # statistic_anno_json()
+    statistic_pn_trainval()

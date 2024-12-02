@@ -55,6 +55,16 @@ def random_cut_fn(x1,y1,w,h, cut_num=1):
         cut_results.append([newx,newy,new_w,new_h])
     return cut_results
 
+def read_json_anno(json_path):
+    with open(json_path, 'rb') as f:
+        result = chardet.detect(f.read())
+        encoding = result['encoding']
+    with open(json_path,'r',encoding = encoding) as f:
+        data = json.load(f)
+    annotations = data['annotation']
+
+    return annotations
+
 def read_json_valid(json_path, max_xy):
     '''
     返回江丰生物json标注中的有效标注框

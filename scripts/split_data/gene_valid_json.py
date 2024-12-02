@@ -63,8 +63,8 @@ def process_jfsw(row_info, json_path):
     return valid_info
 
 if __name__ == '__main__':
-    df_train = pd.read_csv('data_resource/cls_pn/1117_train.csv')
-    df_val = pd.read_csv('data_resource/cls_pn/1117_val.csv')
+    df_train = pd.read_csv('data_resource/cls_pn/1127_train.csv')
+    df_val = pd.read_csv('data_resource/cls_pn/1127_val.csv')
 
     anno_train = dict(slide_num = df_train.shape[0], valid_imgs = [])
     anno_val = dict(slide_num = df_val.shape[0], valid_imgs = [])
@@ -88,7 +88,7 @@ if __name__ == '__main__':
             if slide_valid_info is not None:
                 anno_json['valid_imgs'].append(slide_valid_info)
     
-    with open('data_resource/cls_pn/1117_anno_train.json', 'w') as file:
+    with open('data_resource/cls_pn/1127_anno_train.json', 'w') as file:
         json.dump(anno_train, file)
-    with open('data_resource/cls_pn/1117_anno_val.json', 'w') as file:
+    with open('data_resource/cls_pn/1127_anno_val.json', 'w') as file:
         json.dump(anno_val, file)

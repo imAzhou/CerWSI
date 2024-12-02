@@ -2,7 +2,7 @@ import shutil
 import os
 import sys
 
-target_dir = '/home/zly/codes/cervix_wsi_cls/data_resource/cls_valid/invalid'
+target_dir = '/home/zly/codes/cervix_wsi_cls/data_resource/cls_valid/valid'
 
 del_list = []
 while True:

@@ -1,7 +1,7 @@
 import torch.nn as nn
 from mmpretrain.models.classifiers import ImageClassifier
 
-num_classes = 2
+num_classes = -1
 model_config = dict(
     pretrained = 'checkpoints/resnet50_8xb32_in1k_20210831-ea4938fc.pth',
     backbone=dict(
@@ -28,8 +28,10 @@ model_config = dict(
     )
 )
 
-class PNClsNet(ImageClassifier):
+class PatchClsNet(ImageClassifier):
 
-    def __init__(self):
+    def __init__(self, num_classes):
         ''' '''
-        super(PNClsNet, self).__init__(**model_config)
+        model_config['head']['num_classes'] = num_classes
+        model_config['data_preprocessor']['num_classes'] = num_classes
+        super(PatchClsNet, self).__init__(**model_config)

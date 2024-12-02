@@ -1,6 +1,8 @@
 .vscode/
 checkpoints/
 log/
+statistic_results/
 data_resource/
+predict_results/
 cer_wsi.egg-info/
 **/__pycache__

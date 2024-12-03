@@ -45,7 +45,7 @@ for mode in ['train', 'val']:
     
     for pId,linetxts in rc_NILM_patch_patientId.items():
         random.shuffle(linetxts)
-        keep_idx = len(linetxts) // 6
+        keep_idx = len(linetxts)
         new_lines.extend(linetxts[:keep_idx])
         patch_clsname_cnt['rc_NILM'] = patch_clsname_cnt.get('rc_NILM', 0) + keep_idx
     
@@ -57,6 +57,6 @@ for mode in ['train', 'val']:
     result_table.add_row(['num'] + sorted_values)
     print(result_table)
 
-    # random.shuffle(new_lines)
-    # with open(f'{root_dir}/{mode}_rcp_c6.txt', 'w') as f:
-    #     f.writelines(new_lines)
+    random.shuffle(new_lines)
+    with open(f'{root_dir}/{mode}_rcp_c6.txt', 'w') as f:
+        f.writelines(new_lines)

@@ -189,7 +189,7 @@ def multiprocess_inference():
         workers.join()
 
         t_delta = time.time() - start_time
-        positive_ratio_thr = 0.01
+        positive_ratio_thr = 0.005
         curent_id = np.array(valid_result)
 
         if args.only_valid:
@@ -245,10 +245,10 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 python test_wsi.py \
-    data_resource/optimize_0.csv \
+    data_resource/cls_pn/1127_train.csv \
     checkpoints/vlaid_cls_best.pth \
-    checkpoints/pn_cls_best/rcp_c6.pth \
-    --record_save_dir log/optimize_valid_visual \
+    checkpoints/pn_cls_best/rcp_c6_v2.pth \
+    --record_save_dir log/1127_train_rcp_c6 \
     --num_classes 6 \
     --cpu_num 8 \
     --test_bs 64 \

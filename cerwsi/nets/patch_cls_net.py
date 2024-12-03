@@ -1,4 +1,3 @@
-import torch.nn as nn
 from mmpretrain.models.classifiers import ImageClassifier
 
 num_classes = -1

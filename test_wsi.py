@@ -15,7 +15,7 @@ import os
 import copy
 from mmengine.logging import MMLogger
 from cerwsi.utils import (KFBSlide, set_seed,)
-from cerwsi.nets import ValidClsNet, PatchClsNet
+from cerwsi.nets import ValidClsNet, PatchClsNet, PatchClsDINO
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
@@ -122,6 +122,20 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
     print(f'Core: {proc_id}, process {sum(curent_id)} patches done!!')
     return curent_id, pn_pred_results
 
+def get_pn_model(device):
+    if args.pn_model_type == 'resnet50':
+        pn_model = PatchClsNet(num_classes = args.num_classes)
+    elif args.pn_model_type == 'dinov2_s':
+        pn_model = PatchClsDINO(num_classes = args.num_classes, device=device)
+    
+    pn_model.to(device)
+    pn_model.eval()
+    pn_state_dict = torch.load(args.pn_model_ckpt)
+    if 'state_dict' in pn_state_dict:
+        pn_state_dict = pn_state_dict['state_dict']
+    pn_model.load_state_dict(pn_state_dict)
+
+    return pn_model
 
 def multiprocess_inference():
     all_kfb_info = pd.read_csv(args.test_csv_file)
@@ -135,13 +149,7 @@ def multiprocess_inference():
     if args.only_valid:
         pn_model = None
     else:
-        pn_model = PatchClsNet(num_classes = args.num_classes)
-        pn_model.to(device)
-        pn_model.eval()
-        pn_state_dict = torch.load(args.pn_model_ckpt)
-        if 'state_dict' in pn_state_dict:
-            pn_state_dict = pn_state_dict['state_dict']
-        pn_model.load_state_dict(pn_state_dict)
+        pn_model = get_pn_model(device)
 
     print('='*10 + 'Models Load Done!' + '='*10)
     if args.record_save_dir:
@@ -222,11 +230,11 @@ def multiprocess_inference():
 parser = argparse.ArgumentParser()
 parser.add_argument('test_csv_file', type=str)
 parser.add_argument('valid_model_ckpt', type=str)
+parser.add_argument('pn_model_type', type=str, choices=['resnet50', 'dinov2_s'])
 parser.add_argument('pn_model_ckpt', type=str)
 parser.add_argument('--record_save_dir', type=str)
 parser.add_argument('--num_classes', type=int, default=2)
 parser.add_argument('--only_valid', action='store_true')
-# parser.add_argument('--visual_pred', action='store_true')
 parser.add_argument('--visual_pred', type=str, nargs='*', choices=['0', '1', 'invalid', 'valid', 'uncertain'])
 parser.add_argument('--cpu_num', type=int, default=1, help='multiprocess cpu num')
 parser.add_argument('--test_bs', type=int, default=16, help='batch size of model test')
@@ -247,6 +255,7 @@ Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncerta
 python test_wsi.py \
     data_resource/cls_pn/1127_train.csv \
     checkpoints/vlaid_cls_best.pth \
+    resnet50 \
     checkpoints/pn_cls_best/rcp_c6_v2.pth \
     --record_save_dir log/1127_train_rcp_c6 \
     --num_classes 6 \

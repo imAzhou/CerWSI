@@ -1,9 +1,0 @@
-device: 1
-num_classes: 2
-image_size: [224, 224]
-load_encoder: .details_pap/checkpoints/GSS/10-21_13:56:14#fold1,ImageNet预训练ResNet50,未染色归一化,q=5/Net_best.pth
-load_classifier: .details_pap/checkpoints/TRANS/10-22_03:08:08#混合,未染色归一化,ImageNet预训练ResNet,GSSq=5,每个epoch生成特征后训练trans5轮,随机取70%特征形成序列,模型中将expand替换为repeat/Classifier_best.pth
-test_csv_file: datasets/wsi_csv/wxl_1.csv
-predict_save_dir: predict_result
-dataset_tag: wxl_1
-multiprocess_cpu_num: 16

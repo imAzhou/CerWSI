@@ -1,17 +1,14 @@
 import io
-
 from PIL import Image
-from openslide import AbstractSlide, _OpenSlideMap
-
 import os
 from ctypes import *
 from itertools import count
-
-from openslide import lowlevel
-
 import numpy as np
 from io import BytesIO
 from PIL import Image
+from openslide import AbstractSlide, _OpenSlideMap
+from openslide import lowlevel
+
 
 __all__ = ['KFBSlide']
 

@@ -60,6 +60,6 @@ def calc_evaluation():
 
 
 if __name__ == '__main__':
-    log_root_dir = 'log/1127_val_rcp_c6'
-    draw_plot()
+    log_root_dir = 'log/1127_val_rcp_hs_c6_70'
+    # draw_plot()
     calc_evaluation()

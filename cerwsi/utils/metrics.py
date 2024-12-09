@@ -13,9 +13,9 @@ def calculate_metrics(y_true, y_pred):
     sensitivity = tp / (tp + fn)
 
     return {
-        "accuracy": round(accuracy, 2),
-        "sensitivity": round(sensitivity, 2),
-        "specificity": round(specificity, 2),
+        "accuracy": round(accuracy, 4),
+        "sensitivity": round(sensitivity, 4),
+        "specificity": round(specificity, 4),
         'cm': cm
     }
 

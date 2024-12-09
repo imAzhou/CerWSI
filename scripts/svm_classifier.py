@@ -12,7 +12,7 @@ from sklearn.metrics import classification_report
 clsnames = ['NILM', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
 
 def gene_npz():
-    root_dir = '/c22073/zly/datasets/WXL_JFSW'
+    root_dir = 'data_resource/cls_pn/cut_img'
 
     device = torch.device('cuda:0')
     backbone_model: torch.nn.Module = dinov2_vits14(pretrained=False)

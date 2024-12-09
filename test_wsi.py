@@ -22,7 +22,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules
 
 PATCH_EDGE = 500
 CERTAIN_THR = 0.7
-NEGATIVE_THR = 0.5
+NEGATIVE_THR = 0.7
+positive_ratio_thr = 0.005
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
     data_batch = dict(inputs=[], data_samples=[])
@@ -197,7 +198,6 @@ def multiprocess_inference():
         workers.join()
 
         t_delta = time.time() - start_time
-        positive_ratio_thr = 0.005
         curent_id = np.array(valid_result)
 
         if args.only_valid:
@@ -253,14 +253,15 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 python test_wsi.py \
-    data_resource/cls_pn/1127_train.csv \
+    data_resource/train_neg.csv \
     checkpoints/vlaid_cls_best.pth \
     resnet50 \
     checkpoints/pn_cls_best/rcp_c6_v2.pth \
-    --record_save_dir log/1127_train_rcp_c6 \
+    --record_save_dir log/1127_train_neg \
     --num_classes 6 \
     --cpu_num 8 \
     --test_bs 64 \
+    --visual_pred 1
     --only_valid \
     --visual_pred invalid valid 1
 '''

@@ -24,6 +24,7 @@ PATCH_EDGE = 500
 CERTAIN_THR = 0.7
 NEGATIVE_THR = 0.7
 positive_ratio_thr = 0.005
+kfb_root_dir = '/medical-data/data'
 POINT_FLAG = dict(valid=-1, invalid=0, uncertain=1, negative=2, positive=3)
 CHOOSE_K = 1000
 
@@ -150,7 +151,7 @@ def multiprocess_inference():
     for row in all_kfb_info.itertuples(index=True):
         start_time = time.time()
         print('collecting start points... ')
-        slide = KFBSlide(row.kfb_path)
+        slide = KFBSlide(f'{kfb_root_dir}/{row.kfb_path}')
         width, height = slide.level_dimensions[0]
         iw, ih = ceil(width/PATCH_EDGE), ceil(height/PATCH_EDGE)
         r2 = (int(max(iw, ih)*1.1)//2)**2
@@ -170,7 +171,7 @@ def multiprocess_inference():
         workers = Pool(processes=cpu_num)
         processes = []
         for proc_id, set_group in enumerate(set_split):
-            p = workers.apply_async(process_patches,(proc_id, set_group, valid_model, pn_model, row.kfb_path))
+            p = workers.apply_async(process_patches,(proc_id, set_group, valid_model, pn_model, f'{kfb_root_dir}/{row.kfb_path}'))
             processes.append(p)
         points_record_total = []
         for p in processes:
@@ -200,7 +201,7 @@ def multiprocess_inference():
         workers = Pool(processes=cpu_num)
         processes = []
         for proc_id, set_group in enumerate(set_split):
-            p = workers.apply_async(gene_token,(proc_id, set_group, pn_model, row.kfb_path, row.patientId))
+            p = workers.apply_async(gene_token,(proc_id, set_group, pn_model, f'{kfb_root_dir}/{row.kfb_path}', row.patientId))
             processes.append(p)
         pt_records = []
         for p in processes:
@@ -261,10 +262,10 @@ python scripts/split_data/gene_slide_token.py \
     data_resource/cls_pn/1127_val.csv \
     checkpoints/vlaid_cls_best.pth \
     resnet50 \
-    checkpoints/pn_cls_best/rcp_c6_v2.pth \
+    checkpoints/rcp_c6_v2.pth \
     --record_save_dir log/1127_val_token \
     --num_classes 6 \
     --cpu_num 8 \
     --test_bs 64 \
-    --token_save_dir /disk/zly/slide_token/val
+    --token_save_dir data_resource/slide_token/val
 '''

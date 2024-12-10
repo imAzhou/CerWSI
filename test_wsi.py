@@ -24,6 +24,7 @@ PATCH_EDGE = 500
 CERTAIN_THR = 0.7
 NEGATIVE_THR = 0.7
 positive_ratio_thr = 0.005
+kfb_root_dir = '/medical-data/data'
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
     data_batch = dict(inputs=[], data_samples=[])
@@ -162,7 +163,7 @@ def multiprocess_inference():
     for row in all_kfb_info.itertuples(index=True):
         start_time = time.time()
         print('collecting start points... ')
-        slide = KFBSlide(row.kfb_path)
+        slide = KFBSlide(f'{kfb_root_dir}/{row.kfb_path}')
         width, height = slide.level_dimensions[0]
         iw, ih = ceil(width/PATCH_EDGE), ceil(height/PATCH_EDGE)
         r2 = (int(max(iw, ih)*1.1)//2)**2
@@ -186,7 +187,7 @@ def multiprocess_inference():
         for proc_id, set_group in enumerate(set_split):
             p = workers.apply_async(process_patches,
                                     (proc_id, set_group, valid_model, pn_model,
-                                     row.kfb_path, row.patientId))
+                                     f'{kfb_root_dir}/{row.kfb_path}', row.patientId))
             processes.append(p)
 
         valid_result, pn_result = [], []
@@ -253,11 +254,11 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 python test_wsi.py \
-    data_resource/train_neg.csv \
+    data_resource/cls_pn/1127_val.csv \
     checkpoints/vlaid_cls_best.pth \
     resnet50 \
-    checkpoints/pn_cls_best/rcp_c6_v2.pth \
-    --record_save_dir log/1127_train_neg \
+    checkpoints/rcp_c6_hs.pth \
+    --record_save_dir log/1127_val_hs \
     --num_classes 6 \
     --cpu_num 8 \
     --test_bs 64 \

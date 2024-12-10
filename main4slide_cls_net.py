@@ -10,7 +10,7 @@ from cerwsi.utils import calculate_metrics
 from sklearn.metrics import classification_report
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 def train_net(cfg):
     model.train()
@@ -57,7 +57,7 @@ def train_net(cfg):
         result_table = PrettyTable()
         result_table.field_names = metric_result.keys()
         result_table.add_row(metric_result.values())
-        logger.info('\n' + result_table)
+        logger.info('\n' + str(result_table))
         report = classification_report(slide_gt, slide_pred, target_names=["Neg", "Pos"])
         logger.info('\n' + report)
         
@@ -93,6 +93,5 @@ if __name__ == '__main__':
 python main4slide_cls_net.py \
     configs/dataset/slide_cls_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/debug
-
+    --record_save_dir log/slide_token_cls
 '''

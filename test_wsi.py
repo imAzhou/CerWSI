@@ -253,11 +253,11 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 python test_wsi.py \
-    data_resource/train_neg.csv \
+    data_resource/cls_pn/1127_val.csv \
     checkpoints/vlaid_cls_best.pth \
     resnet50 \
-    checkpoints/pn_cls_best/rcp_c6_v2.pth \
-    --record_save_dir log/1127_train_neg \
+    checkpoints/pn_cls_best/rcp_c6_hs.pth \
+    --record_save_dir log/1127_val_hs \
     --num_classes 6 \
     --cpu_num 8 \
     --test_bs 64 \

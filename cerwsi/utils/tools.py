@@ -24,15 +24,22 @@ def get_parameter_number(model):
         'Trainable': f'{(trainable_num/one_M):.4f}M',
     }
 
-def is_bbox_inside(bbox1, bbox2):
+def is_bbox_inside(bbox1, bbox2, tolerance=0):
     """
-    判断 bbox1 是否被包含在 bbox2 内部
+    判断 bbox1 是否被包含在 bbox2 内部（允许一定误差）
     bbox 格式为 [x_min, y_min, x_max, y_max]
+    
+    参数:
+        bbox1: list, 表示被检测的边界框
+        bbox2: list, 表示容器边界框
+        tolerance: float, 允许的超出误差值
+    返回:
+        bool: 如果 bbox1 在 bbox2 内（允许误差）则返回 True，否则返回 False
     """
-    return (bbox1[0] >= bbox2[0] and  # bbox1的左边界在bbox2的左边界之内
-            bbox1[1] >= bbox2[1] and  # bbox1的上边界在bbox2的上边界之内
-            bbox1[2] <= bbox2[2] and  # bbox1的右边界在bbox2的右边界之内
-            bbox1[3] <= bbox2[3])     # bbox1的下边界在bbox2的下边界之内
+    return (bbox1[0] >= bbox2[0] - tolerance and  # bbox1的左边界可以稍微超出bbox2的左边界
+            bbox1[1] >= bbox2[1] - tolerance and  # bbox1的上边界可以稍微超出bbox2的上边界
+            bbox1[2] <= bbox2[2] + tolerance and  # bbox1的右边界可以稍微超出bbox2的右边界
+            bbox1[3] <= bbox2[3] + tolerance)     # bbox1的下边界可以稍微超出bbox2的下边界
 
 def random_cut_fn(x1,y1,w,h, cut_num=1):
     if w < 64 or h < 64:
@@ -54,6 +61,61 @@ def random_cut_fn(x1,y1,w,h, cut_num=1):
         assert is_bbox_inside([x1,y1,x1+w,y1+h], [newx,newy,newx+new_w,newy+new_h]), "new box cannot contained the original box"
         cut_results.append([newx,newy,new_w,new_h])
     return cut_results
+
+def random_cut_square(rect, sq_size):
+    """
+    根据输入矩形 rect (x, y, w, h) 的宽高条件，返回裁剪正方形区域的左上角坐标 (x1, y1)。
+    sq_size：正方形边长
+    规则：假设 sq_size = 500
+    1. 如果 w > 500 且 h > 500，在矩形内部随机裁剪一块宽高为 500 的区域。
+    2. 如果 w < 500 且 h < 500，随机生成一个宽高为 500 的矩形包裹住输入矩形。
+    3. 如果宽或高小于 500，则生成一个宽高为 500 的矩形，包裹住短边，长边上随机。
+
+    返回:
+        tuple: 裁剪矩形区域的左上角坐标 (x1, y1)
+    """
+    int_rect = [round(i) for i in rect]
+    x, y, w, h = int_rect
+    # Case 1: Both width and height > sq_size
+    if w > sq_size and h > sq_size:
+        x1 = random.randint(x, x + w - sq_size)  # 随机选取左上角 x 坐标
+        y1 = random.randint(y, y + h - sq_size)  # 随机选取左上角 y 坐标
+        return x1, y1
+
+    # Case 2: Both width and height < sq_size
+    elif w < sq_size and h < sq_size:
+        x1 = random.randint(x - sq_size + w, x)  # 左上角的 x1 随机
+        y1 = random.randint(y - sq_size + h, y)  # 左上角的 y1 随机
+        return x1, y1
+
+    # Case 3: One side < sq_size
+    else:
+        if w < sq_size:  # 宽度较短
+            x1 = random.randint(x - sq_size + w, x)  # 左上角的 x1 随机
+            y1 = random.randint(y, y + h - sq_size)  # 高度随机分布
+        else:  # 高度较短
+            x1 = random.randint(x, x + w - sq_size)  # 宽度随机分布
+            y1 = random.randint(y - sq_size + h, y)  # 左上角的 y1 随机
+        return x1, y1
+
+def remap_points(annitem):
+    points = annitem['points']
+    if len(points) < 2:
+        return annitem
+    p1_x,p1_y = points[0]['x'],points[0]['y']
+    p2_x,p2_y = points[1]['x'],points[1]['y']
+    if p1_x < p2_x and p1_y < p2_y:
+        return annitem
+    if p1_x > p2_x and p1_y > p2_y:
+        annitem['points'] = [points[1], points[0]]
+        annitem['region'] = dict(
+            x = p2_x, y = p2_y,
+            width = p1_x - p2_x, height = p1_y - p2_y
+        )
+        return annitem
+    
+    return None
+
 
 def read_json_anno(json_path):
     with open(json_path, 'rb') as f:

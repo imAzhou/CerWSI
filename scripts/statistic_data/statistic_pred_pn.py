@@ -32,7 +32,7 @@ def draw_plot():
     plt.savefig(f'{log_root_dir}/positive_ratio.png')
 
 def calc_evaluation():
-    positive_ratio_thr = 0.005
+    positive_ratio_thr = 0.000
     slide_pred, slide_gt = [],[]
     csv_file = f'{log_root_dir}/pred_pn.csv'
     df_csv = pd.read_csv(csv_file)
@@ -60,6 +60,6 @@ def calc_evaluation():
 
 
 if __name__ == '__main__':
-    log_root_dir = 'log/1127_val_rcp_hs_c6_70'
+    log_root_dir = 'log/1127_val_rcp_c6_70'
     # draw_plot()
     calc_evaluation()

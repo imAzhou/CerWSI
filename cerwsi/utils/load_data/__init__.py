@@ -1,2 +1,3 @@
 from .load_cls_dataset import load_cls_dataset
+from .load_multilabel_dataset import load_multilabel_dataset
 from .load_token_dataset import load_token_dataset

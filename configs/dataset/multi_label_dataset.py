@@ -3,7 +3,7 @@ data_root = 'data_resource/ROI'
 classes = ['negative', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
 num_classes = len(classes)
 train_bs = 64
-val_bs = 32
+val_bs = 64
 img_input_size = 518
 
 
@@ -44,7 +44,6 @@ val_dataloader = dict(
     sampler=dict(type='DefaultSampler', shuffle=False),
 )
 val_evaluator = [
-    dict(type='Accuracy'),
     dict(type='MultiLabelMetric', thr=0.5, average=None),  # output class-wise directly
     dict(type='MultiLabelMetric', thr=0.5, average='macro'),  # overall mean
 ]

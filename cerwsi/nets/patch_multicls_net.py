@@ -75,20 +75,11 @@ class PatchMultiClsNet(nn.Module):
 
     def val_step(self, data_batch):
         data = self.data_preprocessor(data_batch, False)
-        cls_score = self.forward(data['inputs'].to(self.device))
-        probs = torch.sigmoid(cls_score)
-        # threshold = 0.5  # 阈值可以调整
-        # predictions = (probs >= threshold).int().detach()
-        # predicted_labels = [torch.where(pred == 1)[0].tolist() for pred in predictions]
+        logits = self.forward(data['inputs'].to(self.device))
+        probs = torch.sigmoid(logits)
         
-        # pred_scores = F.softmax(cls_score, dim=1)
-        # pred_labels = pred_scores.argmax(dim=1, keepdim=True).detach()
-
         out_data_samples = []
-        data_samples = data['data_samples']
-        for data_sample, score in zip(data_samples, probs):
-            if data_sample is None:
-                data_sample = DataSample(num_classes=self.num_classes)
+        for data_sample, score in zip(data['data_samples'], probs):
             data_sample.set_pred_score(score)
             out_data_samples.append(data_sample)
         return out_data_samples

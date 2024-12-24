@@ -39,7 +39,7 @@ def train_net(cfg):
             evaluator.process(data_samples=outputs, data_batch=data_batch)
             pbar.update(cfg.val_bs)
 
-        metrics = evaluator.evaluate(len(valloader)*cfg.val_bs)            
+        metrics = evaluator.evaluate(len(valloader.dataset))            
         pbar.close()
         logger.info(metrics)
 
@@ -76,5 +76,5 @@ if __name__ == '__main__':
 python main4multilabel_net.py \
     configs/dataset/multi_label_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/debug
+    --record_save_dir log/multi_label
 '''

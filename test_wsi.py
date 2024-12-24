@@ -94,12 +94,12 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
     read_result_pool, valid_read_result = [], []
     curent_id = [0,0,0]
     pn_pred_results = []
-    for (x,y) in start_points:
+    for p_idx,(x,y)in enumerate(start_points):
         location, level, size = (x, y), 0, (PATCH_EDGE, PATCH_EDGE)
         read_result = copy.deepcopy(Image.fromarray(slide.read_region(location, level, size)))
         read_result_pool.append(read_result)
         
-        if len(read_result_pool) % args.test_bs == 0:
+        if len(read_result_pool) % args.test_bs == 0 or p_idx == len(start_points)-1:
             valid_input = inference_valid_batch(
                 valid_model, read_result_pool, curent_id, save_prefix)
             read_result_pool = []
@@ -110,13 +110,6 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
             pred_result = inference_batch_pn(pn_model, valid_read_result, save_root_dir)
             pn_pred_results.extend(pred_result)
             valid_read_result = []
-    
-    if len(read_result_pool) > 0:
-        valid_input = inference_valid_batch(
-            valid_model, read_result_pool, curent_id, save_prefix)
-        if len(valid_input) > 0 and not args.only_valid:
-            pred_result = inference_batch_pn(pn_model, valid_input, save_root_dir)
-            pn_pred_results.extend(pred_result)
 
     del read_result_pool
     torch.cuda.empty_cache()

@@ -10,7 +10,8 @@ class SlideClsNet(nn.Module):
         super(SlideClsNet, self).__init__()
 
         self.cls_token = nn.Parameter(torch.randn(input_channels, dtype=torch.float32))
-        transformer_layer = nn.TransformerEncoderLayer(d_model=input_channels, nhead=nhead, activation='gelu')
+        transformer_layer = nn.TransformerEncoderLayer(
+            d_model=input_channels, nhead=nhead, activation='gelu', batch_first=True)
         self.encoder = nn.TransformerEncoder(transformer_layer, num_layers=num_layers)
         self.fc = nn.Linear(input_channels, num_classes)
 

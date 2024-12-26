@@ -6,14 +6,24 @@ import json
 from typing import Any, Generator, List
 
 def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
+    # Set random seed for PyTorch
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    # torch.backends.cudnn.enabled = False
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
+
+    # Set random seed for CUDA if available
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    # Set random seed for NumPy
+    np.random.seed(seed)
+
+    # Set random seed for random module
+    random.seed(seed)
+
+    # Set random seed for CuDNN if available
+    if torch.backends.cudnn.enabled:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 def get_parameter_number(model):
     total_num = sum(p.numel() for p in model.parameters())

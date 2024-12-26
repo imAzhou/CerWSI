@@ -48,7 +48,7 @@ def train_net(cfg):
         pbar.close()
         logger.info(metrics)
 
-    torch.save(model.state_dict(), f'checkpoints/linear_c6.pth')
+    torch.save(model.state_dict(), f'{files_save_dir}/checkpoints/linear_c6.pth')
 
 
 parser = argparse.ArgumentParser()

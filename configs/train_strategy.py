@@ -1,6 +1,6 @@
 
 # strategy
-lr = 0.001
+lr = 0.0005
 weight_decay = 0.001
 max_epochs = 50
 warmup_epoch = 5

@@ -6,23 +6,24 @@ from mmengine.config import Config
 from cerwsi.nets import SlideClsNet
 from cerwsi.utils import (set_seed, load_token_dataset, get_logger,get_train_strategy)
 from prettytable import PrettyTable
-from cerwsi.utils import calculate_metrics
+from cerwsi.utils import calculate_metrics,print_confusion_matrix
 from sklearn.metrics import classification_report
 import os
+import pandas as pd
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+NEGATIVE_THR = 0.7
 
 def train_net(cfg):
-    model.train()
+    
     trainloader = load_token_dataset('train', cfg)
     valloader = load_token_dataset('val', cfg)
     
     optimizer,lr_scheduler = get_train_strategy(model, cfg)
-
-    logger, files_save_dir = get_logger(
-        args.record_save_dir, model, cfg, 'slide_cls')
+    logger, files_save_dir = get_logger(args.record_save_dir, model, cfg, 'slide_cls')
     
     for epoch in range(cfg.max_epochs):
+        model.train()
         current_lr = optimizer.param_groups[0]["lr"]
         pbar = tqdm(total=len(trainloader)*cfg.train_bs, desc=f'Train Epoch {epoch + 1}/{cfg.max_epochs}, LR: {current_lr:.6f}')
         for idx, data_batch in enumerate(trainloader):
@@ -63,6 +64,44 @@ def train_net(cfg):
         
     torch.save(model.state_dict(), f'{files_save_dir}/checkpoints/slide_cls_best.pth')
 
+def val_net(cfg, load_ckpt, eval_save_dir):
+    model.eval()
+    print(model.load_state_dict(torch.load(load_ckpt)))
+    valloader = load_token_dataset('val', cfg)
+    pbar = tqdm(total=len(valloader)*cfg.val_bs)
+    slide_pred, slide_gt = [],[]
+    wrong_predict = []
+    for idx, data_batch in enumerate(valloader):
+        with torch.no_grad():
+            inputs = data_batch['inputs'].to(device)
+            pred_scores,pred_labels = model.val_step(inputs)
+        
+        for p_score,gt_label,p_idx in zip(pred_scores, data_batch['label'], range(cfg.val_bs)):
+            pred_clsid = 0 if int(p_score[0] > NEGATIVE_THR) else 1
+            slide_gt.append(gt_label)
+            slide_pred.append(pred_clsid)
+            if pred_clsid != gt_label:
+                wrong_predict.append([
+                    data_batch['metadata']['patientId'][p_idx],
+                    data_batch['metadata']['slide_clsname'][p_idx],
+                    data_batch['metadata']['kfb_source'][p_idx],
+                ])
+        pbar.update(cfg.val_bs)
+    pbar.close()
+
+    df_wrong_predict = pd.DataFrame(wrong_predict, columns=['patientId','slide_clsname','kfb_source'])
+    df_wrong_predict.to_csv(f'{eval_save_dir}/wrong_predict.csv', index=False)
+    metric_result = calculate_metrics(slide_gt, slide_pred)
+    cm = metric_result['cm']
+    del metric_result['cm']
+    result_table = PrettyTable()
+    result_table.field_names = metric_result.keys()
+    result_table.add_row(metric_result.values())
+    print(result_table)
+    print_confusion_matrix(cm)
+    report = classification_report(slide_gt, slide_pred, target_names=["Neg", "Pos"])
+    print(report)
+
 parser = argparse.ArgumentParser()
 # base args
 parser.add_argument('dataset_config_file', type=str)
@@ -86,7 +125,10 @@ if __name__ == '__main__':
     
     model = SlideClsNet(num_classes=2, device=device)
     model.to(device)
-    train_net(cfg)
+    # train_net(cfg)
+
+    val_net(cfg, 'log/slide_token_cls/checkpoints/slide_cls_best.pth', 'log/slide_token_cls')
+
 
 
 '''

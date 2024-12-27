@@ -9,7 +9,7 @@ from cerwsi.nets import PatchMultiHeadNet
 from cerwsi.utils import MyMultiLabelMetric
 from cerwsi.utils import set_seed, init_distributed_mode, load_multilabel_dataset, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
-
+POSITIVE_THR = 0.3
 # os.environ['CUDA_VISIBLE_DEVICES'] = '5,6,7'
 
 parser = argparse.ArgumentParser()
@@ -31,8 +31,8 @@ def train_net(cfg, model, model_without_ddp, device):
     
     # evaluator = build_evaluator(cfg.val_evaluator)
     evaluator = build_evaluator([
-        MyMultiLabelMetric(thr=0.3, average=None), 
-        MyMultiLabelMetric(thr=0.3, average='macro')])
+        MyMultiLabelMetric(thr=POSITIVE_THR, average=None), 
+        MyMultiLabelMetric(thr=POSITIVE_THR, average='macro')])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_label')
@@ -48,8 +48,6 @@ def train_net(cfg, model, model_without_ddp, device):
         
         avg_loss = torch.zeros(1, device=device)
         for idx, data_batch in enumerate(pbar):
-            if idx > 10:
-                break
             loss = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
             avg_loss = (avg_loss * idx + loss.detach()) / (idx + 1)
@@ -62,8 +60,8 @@ def train_net(cfg, model, model_without_ddp, device):
             pbar.close()
         lr_scheduler.step()
         
-        # if (epoch+1) % 10 == 0:
-        if epoch == 0:
+        if (epoch+1) % 10 == 0:
+        # if epoch == 0:
             model.eval()
             pbar = valloader
             if is_main_process():
@@ -71,8 +69,6 @@ def train_net(cfg, model, model_without_ddp, device):
                 pbar = tqdm(valloader, ncols=80)
             
             for idx, data_batch in enumerate(pbar):
-                if idx > 10:
-                    break
                 with torch.no_grad():
                     outputs = model(data_batch, 'val')
                 evaluator.process(data_samples=outputs, data_batch=data_batch)
@@ -81,8 +77,9 @@ def train_net(cfg, model, model_without_ddp, device):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
-                if metrics['multi-label/f1-score'] > max_acc:
-                    max_acc = metrics['multi-label/f1-score']
+                prime_metric = f'multi-label/f1-score_thr-{POSITIVE_THR:.2f}'
+                if metrics[prime_metric] > max_acc:
+                    max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
 
 
@@ -115,8 +112,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12345 main4multilabel_net.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multilhead_net.py \
     configs/dataset/multi_label_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/multilabel
+    --record_save_dir log/multihead
 '''

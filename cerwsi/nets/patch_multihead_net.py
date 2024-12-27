@@ -13,7 +13,7 @@ class PatchMultiHeadNet(nn.Module):
         self.backbone = dinov2_vits14(pretrained=False)
         embed_dim = self.backbone.embed_dim
         self.linear_heads = nn.ModuleList()
-        for i in num_classes:
+        for i in range(num_classes):
             self.linear_heads.append(
                 nn.Linear((1 + layers) * embed_dim, 1)
             )
@@ -28,7 +28,7 @@ class PatchMultiHeadNet(nn.Module):
         self.num_classes = num_classes
         self.layers = layers
         self.device = device
-        self.loss_fn = nn.BCEWithLogitsLoss()
+        # self.loss_fn = nn.BCEWithLogitsLoss()
 
     def load_backbone(self, ckpt_path, frozen=True):
         backbone_ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=True)
@@ -73,21 +73,48 @@ class PatchMultiHeadNet(nn.Module):
         logits = [linear_head(linear_input) for linear_head in self.linear_heads]
         return logits
 
+    def map_gt(self, datasamples):
+        bs = len(datasamples)
+        GT = torch.zeros(self.num_classes, bs).to(self.device)
+        for class_id in range(self.num_classes):
+            for sample_id, sample in enumerate(datasamples):
+                labels = sample.gt_label
+                if class_id == 0:  # 特殊处理类别 ID 为 0 的情况
+                    GT[class_id, sample_id] = 1 if 0 in labels else 0
+                else:  # 处理类别 ID 为非 0 的情况
+                    if class_id in labels:
+                        GT[class_id, sample_id] = 1
+                    elif 0 not in labels:
+                        GT[class_id, sample_id] = -1
+        return GT
+    
+    def calc_mask_loss(self, input,target):
+        # 逐元素计算损失
+        loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+        # 构建掩码，排除 target == -1 的位置
+        mask = (target != -1)
+        # 仅对有效位置的损失求均值
+        filtered_loss = loss[mask].mean()
+        return filtered_loss
+
+
     def train_step(self, data, optim_wrapper:OptimWrapper):
         logits = self.calc_logits(data['inputs'].to(self.device))
-        binary_matrix = torch.zeros_like(logits, dtype=torch.float32)
-        for i, datasample in enumerate(data['data_samples']):
-            label_list = datasample.gt_label
-            binary_matrix[i, label_list] = 1
-
-        loss = self.loss_fn(logits, binary_matrix)
+        # logits: (num_class, bs)
+        logits = torch.stack(logits).squeeze(-1)
+        # gt_labels4each_cls: (num_class, bs)
+        gt_labels4each_cls = self.map_gt(data['data_samples'])
+        loss = self.calc_mask_loss(logits, gt_labels4each_cls)
         optim_wrapper.update_params(loss)
 
         return loss
 
     def val_step(self, data):
         logits = self.calc_logits(data['inputs'].to(self.device))
-        probs = torch.sigmoid(logits)
+        # logits: (num_class, bs)
+        logits = torch.stack(logits).squeeze(-1)
+        # probs: (bs, num_class)
+        probs = torch.sigmoid(logits).transpose(0,1)
         
         out_data_samples = []
         for data_sample, score in zip(data['data_samples'], probs):

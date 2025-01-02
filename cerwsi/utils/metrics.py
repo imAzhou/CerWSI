@@ -122,3 +122,4 @@ class MyMultiLabelMetric(MultiLabelMetric):
             else:
                 result_metrics[k + f'_{self.average}'] = v.item()
         return result_metrics
+

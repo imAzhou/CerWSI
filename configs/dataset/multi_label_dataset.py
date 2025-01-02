@@ -2,8 +2,8 @@
 data_root = 'data_resource/ROI'
 classes = ['negative', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
 num_classes = len(classes)
-train_bs = 40
-val_bs = 40
+train_bs = 160
+val_bs = 160
 img_input_size = 518
 
 

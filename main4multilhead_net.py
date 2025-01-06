@@ -46,22 +46,21 @@ def train_net(cfg, model, model_without_ddp, device):
         if is_main_process():
             pbar = tqdm(trainloader, ncols=80)
         
-        avg_loss = torch.zeros(1, device=device)
+        # avg_loss = torch.zeros(1, device=device)
         for idx, data_batch in enumerate(pbar):
             loss = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
-            avg_loss = (avg_loss * idx + loss.detach()) / (idx + 1)
+            # avg_loss = (avg_loss * idx + loss.detach()) / (idx + 1)
             if is_main_process():
-                pbar.desc = f"average loss: {round(avg_loss.item(), 4)}"
+                pbar.desc = f"average loss: {round(loss.item(), 4)}"
 
             if idx % 50 == 0 and is_main_process():
-                logger.info(f'Train Epoch [{epoch + 1}/{cfg.max_epochs}][{idx}/{len(trainloader)}], LR: {current_lr:.6f}, average loss: {avg_loss.item():.6f}')
+                logger.info(f'Train Epoch [{epoch + 1}/{cfg.max_epochs}][{idx}/{len(trainloader)}], LR: {current_lr:.6f}, average loss: {loss.item():.6f}')
         if is_main_process():
             pbar.close()
         lr_scheduler.step()
         
-        if (epoch+1) % 10 == 0:
-        # if epoch == 0:
+        if (epoch+1) % 10 == 0 or epoch == 0:
             model.eval()
             pbar = valloader
             if is_main_process():
@@ -112,7 +111,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multilhead_net.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun  --nproc_per_node=4 --master_port=12345 main4multilhead_net.py \
     configs/dataset/multi_label_dataset.py \
     configs/train_strategy.py \
     --record_save_dir log/multihead

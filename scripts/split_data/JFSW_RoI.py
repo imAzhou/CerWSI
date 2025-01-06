@@ -8,7 +8,7 @@ import random
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from cerwsi.utils import KFBSlide,read_json_anno,is_bbox_inside,random_cut_square,remap_points
+from cerwsi.utils import KFBSlide,read_json_anno,is_bbox_inside,random_cut_square,remap_points,generate_cut_regions
 
 POSITIVE_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC', 'AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
 colors = plt.cm.tab10(np.linspace(0, 1, len(POSITIVE_CLASS)))[:, :3] * 255
@@ -48,49 +48,6 @@ def draw_OD(read_image, save_path, square_coords, inside_items):
     plt.close(fig)
 
 
-def generate_cut_regions(region_start, region_width, region_height, k, stride=400):
-    """
-    生成裁切区域的坐标，从左至右，从上至下裁切，重合边长为 stride，边角区域不超出原始区域。
-    
-    :param region_start: 区域的起点坐标 (x, y)
-    :param region_width: 区域的宽度
-    :param region_height: 区域的高度
-    :param k: 正方形的边长
-    :param stride: 重合区域的边长
-    :return: 裁切区域的左上角坐标列表 [(x1, y1), ...]
-    """
-    x_start, y_start = region_start
-    cut_regions = []
-
-    # 主循环，生成所有完整的裁切区域
-    y = y_start
-    while y + k <= y_start + region_height:
-        x = x_start
-        while x + k <= x_start + region_width:
-            cut_regions.append((x, y))
-            x += stride
-        y += stride
-
-    # 处理右边和下边的边角区域
-    if x + k > x_start + region_width:  # 右边的边角区域
-        x = x_start + region_width - k
-        y = y_start
-        while y + k <= y_start + region_height:
-            cut_regions.append((x, y))
-            y += stride
-
-    if y + k > y_start + region_height:  # 下边的边角区域
-        y = y_start + region_height - k
-        x = x_start
-        while x + k <= x_start + region_width:
-            cut_regions.append((x, y))
-            x += stride
-
-    # 右下角的角落区域
-    if (x_start + region_width - k, y_start + region_height - k) not in cut_regions:
-        cut_regions.append((x_start + region_width - k, y_start + region_height - k))
-    return cut_regions
-
 def get_cutregion_inside(square_coord, inside_items):
     '''
     Args:
@@ -120,7 +77,7 @@ def get_ROI_inside(roi_rect, anns):
         sub_class = ann.get('sub_class')
         x,y = region['x'],region['y']
         w,h = region['width'],region['height']
-        if is_bbox_inside([x,y,x+w,y+h], roi_x1y1x2y2, tolerance=5) and sub_class != 'ROI':
+        if w>100 and h>100 and is_bbox_inside([x,y,x+w,y+h], roi_x1y1x2y2, tolerance=5) and sub_class != 'ROI':
             item_inside.append(ann)
     return item_inside
 
@@ -197,7 +154,7 @@ def get_RoI_info():
             with open(f'{json_savedir}/{row.patientId}.json', 'w') as f:
                 json.dump(filter_roi, f)
     
-    with open('statistic_results/jfsw_no_roi.txt', 'w') as f:
+    with open('statistic_results/jfsw_no_roi_v2.txt', 'w') as f:
         f.writelines(no_roi_list)
     
     print(f'total kfb nums: {sum(record_kfb)}, Neg: {record_kfb[0]}, Pos:{record_kfb[1]}')
@@ -257,12 +214,12 @@ def cut_RoI_Img():
                 if len(pos_ann) > 0:
                     pos_square += 1
 
-        if pos_square > 30 or (patient_row.kfb_clsname == 'ASC-US' and pos_square > 10):
+        if pos_square > 5 or (patient_row.kfb_clsname == 'ASC-US' and pos_square > 3):
             retain_pos_slide[patient_row.kfb_clsname] = retain_pos_slide.get(patient_row.kfb_clsname, 0) + 1
             pos_kfb_data.append(patient_row)
 
             for item in flatten_squ:
-                if item['pos_nums'] == 0 and random.random() < 0.3:
+                if item['pos_nums'] == 0 and random.random() < 0.1:
                     save_filename = f'{patientId}_neg{img_uniid_neg}.png'
                     item['filename'] = save_filename
                     all_flatten_squ.append(item)
@@ -284,10 +241,10 @@ def cut_RoI_Img():
         total_slide += value
     print(f'total slide: {total_slide}, total square: {sum(squ_record)}, Neg: {squ_record[0]}, Pos: {squ_record[1]}')
     df_pos_kfb_data = pd.DataFrame(pos_kfb_data)
-    df_pos_kfb_data.to_csv('data_resource/ROI/annofile/1223_pos.csv', index=False)
+    df_pos_kfb_data.to_csv('data_resource/ROI/annofile/1223_pos_v2.csv', index=False)
     square_in_pos_dict = dict(square_nums={'total':sum(squ_record), 'Neg':squ_record[0], 'Pos':squ_record[1]},
                               square_items=all_flatten_squ)
-    with open('data_resource/ROI/annofile/square_in_pos.json', 'w') as f:
+    with open('data_resource/ROI/annofile/square_in_pos_v2.json', 'w') as f:
         json.dump(square_in_pos_dict, f)
     
     # with open('statistic_results/pos_no_ann.txt', 'w') as f:
@@ -325,16 +282,16 @@ def filter_neg_slide():
 
 if __name__ == '__main__':
     data_root_dir = '/medical-data/data'
-    json_savedir = 'data_resource/ROI/annojson4roi'
-    img_savedir = 'data_resource/ROI/square_data/images'
-    imgOD_savedir = 'data_resource/ROI/imagesOD'
+    json_savedir = 'data_resource/ROI/annojson4roi_v2'
+    img_savedir = 'data_resource/ROI/images_v2'
+    imgOD_savedir = 'data_resource/ROI/imagesOD_v2'
     os.makedirs(json_savedir, exist_ok=True)
     os.makedirs(img_savedir, exist_ok=True)
     os.makedirs(imgOD_savedir, exist_ok=True)
     WINDOW_SIZE = 500
     # get_RoI_info()
-    # cut_RoI_Img()
-    filter_neg_slide()
+    cut_RoI_Img()
+    # filter_neg_slide()
 
 
 '''
@@ -350,4 +307,15 @@ ASC-US: 155
 LSIL: 183
 AGC: 217
 total slide: 1021, total square: 490473, Neg: 386251, Pos: 104222
+
+
+==== v2 ====
+total kfb nums: 2355, Neg: 284, Pos:2071
+
+HSIL: 250
+ASC-US: 109
+LSIL: 324
+AGC: 263
+ASC-H: 127
+total slide: 1073, total square: 115028, Neg: 93703, Pos: 21325
 '''

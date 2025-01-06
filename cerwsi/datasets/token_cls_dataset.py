@@ -1,0 +1,36 @@
+import torch
+from torch.utils.data import Dataset
+import cv2
+import json
+from torchvision import transforms
+
+# 自定义数据集类
+class TokenClsDataset(Dataset):
+    def __init__(self, img_dir, json_filepath):
+        """
+        Args:
+            img_dir (str): img dir
+        """
+        self.root_dir = img_dir
+        with open(json_filepath, 'r') as f:
+            self.patch_infolist = json.load(f)
+        self.transform = transforms.Compose([
+            transforms.Resize(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ])
+
+    def __len__(self):
+        return len(self.patch_infolist)
+
+    def __getitem__(self, idx):
+        imginfo = self.patch_infolist[idx]
+        imgpath = f'{self.root_dir}/{imginfo["filename"]}'
+        image = cv2.imread(imgpath)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        input_tensor = self.transform(image)
+        image_label = imginfo['diagnose']
+        token_label = imginfo['gtmap_14']
+
+        return input_tensor,image_label,token_label

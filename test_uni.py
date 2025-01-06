@@ -7,12 +7,14 @@ from huggingface_hub import login, hf_hub_download
 
 local_dir = "checkpoints/"
 # os.makedirs(local_dir, exist_ok=True)  # create directory if it does not exist
-# hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=True)
+# hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=False)
 
-model = timm.create_model(
+uni_model = timm.create_model(
     "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
 )
-model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu"), strict=True)
+
+params_weight = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
+uni_model.load_state_dict(params_weight, strict=True)
 # transform = transforms.Compose(
 #     [
 #         transforms.Resize(224),
@@ -20,4 +22,4 @@ model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), m
 #         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
 #     ]
 # )
-model.eval()
+uni_model.eval()

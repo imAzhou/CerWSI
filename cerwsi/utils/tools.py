@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import torch
-import chardet
 import json
 from typing import Any, Generator, List
 
@@ -128,6 +127,8 @@ def remap_points(annitem):
 
 
 def read_json_anno(json_path):
+    import chardet
+
     with open(json_path, 'rb') as f:
         result = chardet.detect(f.read())
         encoding = result['encoding']
@@ -138,6 +139,8 @@ def read_json_anno(json_path):
     return annotations
 
 def read_json_valid(json_path, max_xy):
+    import chardet
+    
     '''
     返回江丰生物json标注中的有效标注框
 

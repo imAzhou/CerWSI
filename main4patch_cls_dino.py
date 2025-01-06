@@ -72,14 +72,14 @@ if __name__ == '__main__':
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = PatchClsDINO(num_classes=6, device=device)
-    model.load_backbone('checkpoints/dinov2_vits14_pretrain.pth')
+    model = PatchClsDINO(num_classes=cfg.num_classes, device=device)
+    model.load_backbone('checkpoints/dinov2_vits14_pretrain.pth', frozen=cfg.frozen_backbone)
     
     train_net(cfg)
 
 '''
 python main4patch_cls_dino.py \
-    configs/dataset/multi_cls_dataset.py \
+    configs/dataset/binary_cls_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/patch_dino_c6
+    --record_save_dir log/patch_dino_c2
 '''

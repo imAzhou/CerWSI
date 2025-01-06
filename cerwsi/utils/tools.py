@@ -3,7 +3,9 @@ import numpy as np
 import torch
 import chardet
 import json
-from typing import Any, Generator, List
+from PIL import ImageDraw
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 def set_seed(seed):
     # Set random seed for PyTorch
@@ -50,6 +52,7 @@ def is_bbox_inside(bbox1, bbox2, tolerance=0):
             bbox1[1] >= bbox2[1] - tolerance and  # bbox1的上边界可以稍微超出bbox2的上边界
             bbox1[2] <= bbox2[2] + tolerance and  # bbox1的右边界可以稍微超出bbox2的右边界
             bbox1[3] <= bbox2[3] + tolerance)     # bbox1的下边界可以稍微超出bbox2的下边界
+
 
 def random_cut_fn(x1,y1,w,h, cut_num=1):
     if w < 64 or h < 64:
@@ -126,83 +129,99 @@ def remap_points(annitem):
     
     return None
 
+def read_json_anno(json_path, encoding='GB2312'):
+    def detect_encoding(path):
+        with open(path, 'rb') as f:
+            sample = f.read(1024 * 1024)  # 读取前1MB数据进行检测
+        result = chardet.detect(sample)
+        detected_encoding = result['encoding']
+        print(f"Detected Encoding: {detected_encoding}")
+        return detected_encoding
 
-def read_json_anno(json_path):
-    with open(json_path, 'rb') as f:
-        result = chardet.detect(f.read())
-        encoding = result['encoding']
-    with open(json_path,'r',encoding = encoding) as f:
-        data = json.load(f)
-    annotations = data['annotation']
+    # 尝试解码 JSON 文件
+    try:
+        with open(json_path, 'r', encoding=encoding) as f:
+            data = json.load(f)
+    except (UnicodeDecodeError, TypeError):  # 解码错误时重新检测编码
+        print(f"Failed to decode with encoding '{encoding}', trying auto-detect...")
+        encoding = detect_encoding(json_path)
+        with open(json_path, 'r', encoding=encoding) as f:
+            data = json.load(f)
 
+    annotations = data.get('annotation', [])
     return annotations
 
-def read_json_valid(json_path, max_xy):
-    '''
-    返回江丰生物json标注中的有效标注框
+def generate_cut_regions(region_start, region_width, region_height, k, stride=400):
+    """
+    生成裁切区域的坐标，从左至右，从上至下裁切，步长为 stride，边角区域不超出原始区域。
+    
+    :param region_start: 区域的起点坐标 (x, y)
+    :param region_width: 区域的宽度
+    :param region_height: 区域的高度
+    :param k: 正方形的边长
+    :param stride: 步长
+    :return: 裁切区域的左上角坐标列表 [(x1, y1), ...]
+    """
+    x_start, y_start = region_start
+    cut_regions = []
 
-    Args:
-        json_path: str
-        max_xy: (max_x, max_y)
-    Return:
-        valid_annos: list(dict(coord=(x1,y1,x2,y2), size=(w,h), patch_clsname=''))
-    '''
-    NEGATIVE_CLASS = ['NILM', 'GEC']
-    POSITIVE_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC', 'AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
+    # 主循环，生成所有完整的裁切区域
+    y = y_start
+    while y + k <= y_start + region_height:
+        x = x_start
+        while x + k <= x_start + region_width:
+            cut_regions.append((x, y))
+            x += stride
+        y += stride
 
-    with open(json_path, 'rb') as f:
-        result = chardet.detect(f.read())
-        encoding = result['encoding']
-    with open(json_path,'r',encoding = encoding) as f:
-        data = json.load(f)
-    annotations = data['annotation']
-    max_x, max_y = max_xy
+    # 处理右边和下边的边角区域
+    if x + k > x_start + region_width:  # 右边的边角区域
+        x = x_start + region_width - k
+        y = y_start
+        while y + k <= y_start + region_height:
+            cut_regions.append((x, y))
+            y += stride
 
-    pos_bbox_record, neg_bbox_record = [], []
-    for idx,i in enumerate(annotations):
-        region = i.get('region')
-        sub_class = i.get('sub_class')
+    if y + k > y_start + region_height:  # 下边的边角区域
+        y = y_start + region_height - k
+        x = x_start
+        while x + k <= x_start + region_width:
+            cut_regions.append((x, y))
+            x += stride
+
+    # 右下角的角落区域
+    if (x_start + region_width - k, y_start + region_height - k) not in cut_regions:
+        cut_regions.append((x_start + region_width - k, y_start + region_height - k))
+    return cut_regions
+
+def draw_OD(read_image, save_path, square_coords, inside_items, category_colors):
+    draw = ImageDraw.Draw(read_image)
+    sq_x1,sq_y1,sq_w,sq_h = square_coords
+
+    for box_item in inside_items:
+        category = box_item.get('sub_class')
+        region = box_item.get('region')
+        x,y = region['x'],region['y']
         w,h = region['width'],region['height']
-        x1,y1 = region['x'],region['y']
-        x2,y2 = x1+w, y1+h
-        if x2 > max_x or y2 > max_y:
-            continue
-        if sub_class in NEGATIVE_CLASS and (w>224 and h>224):
-            neg_bbox_record.append((idx, [x1,y1,x2,y2], sub_class))
-        if sub_class in POSITIVE_CLASS and (w>100 and h>100):
-            pos_bbox_record.append((idx, [x1,y1,x2,y2], sub_class))
-
-    valid_annos = []
-    for bbox_info in neg_bbox_record:
-        valid_flag = True
-        for idx,i in enumerate(annotations):
-            region = i.get('region')
-            sub_class = i.get('sub_class')
-            w,h = region['width'],region['height']
-            x1,y1 = region['x'],region['y']
-            x2,y2 = x1+w, y1+h
-            if idx != bbox_info[0] and is_bbox_inside([x1,y1,x2,y2], bbox_info[1]) and sub_class not in NEGATIVE_CLASS:
-                valid_flag = False
-                break
-        if valid_flag:
-            bx1,by1,bx2,by2 = bbox_info[1]
-            bw,bh = bx2 - bx1, by2 - by1
-            valid_annos.append(dict(coord=(bx1,by1,bx2,by2), size=(bw,bh), patch_clsname=bbox_info[2]))
+        x1, y1, x2, y2 = x,y,x+w,y+h
+        x_min = max(sq_x1, x1) - sq_x1
+        y_min = max(sq_y1, y1) - sq_y1
+        x_max = min(sq_x1+sq_w, x2) - sq_x1
+        y_max = min(sq_y1+sq_h, y2) - sq_y1
+        
+        color = category_colors.get(category, (255, 255, 255))
+        draw.rectangle([x_min, y_min, x_max, y_max], outline=color, width=3)
+        draw.text((x_min + 2, y_min - 15), category, fill=color)
     
-    for bbox_info in pos_bbox_record:
-        valid_flag = True
-        for idx,i in enumerate(annotations):
-            region = i.get('region')
-            sub_class = i.get('sub_class')
-            w,h = region['width'],region['height']
-            x1,y1 = region['x'],region['y']
-            x2,y2 = x1+w, y1+h
-            if idx != bbox_info[0] and is_bbox_inside([x1,y1,x2,y2], bbox_info[1]) and sub_class != bbox_info[2]:
-                valid_flag = False
-                break
-        if valid_flag:
-            bx1,by1,bx2,by2 = bbox_info[1]
-            bw,bh = bx2 - bx1, by2 - by1
-            valid_annos.append(dict(coord=(bx1,by1,bx2,by2), size=(bw,bh), patch_clsname=bbox_info[2]))
-    
-    return valid_annos
+    # 使用 matplotlib 添加 legend
+    fig, ax = plt.subplots(figsize=(sq_w//100+1, sq_h//100+1), dpi=100)
+    ax.imshow(np.array(read_image))
+    ax.axis('off')  # 不显示坐标轴
+    # 创建 legend
+    patches = [
+        mpatches.Patch(color=np.array(color) / 255.0, label=category)  # Matplotlib 支持归一化颜色
+        for category, color in category_colors.items()
+    ]
+    ax.legend(handles=patches, loc='upper right', bbox_to_anchor=(1.35, 1), frameon=False)
+    fig.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
+    plt.close(fig)

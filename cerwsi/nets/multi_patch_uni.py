@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from mmengine.optim import OptimWrapper
 
 class MultiPatchUNI(nn.Module):
-    def __init__(self, num_classes, device, frozen_backbone=True):
+    def __init__(self, num_classes, frozen_backbone=True):
         super(MultiPatchUNI, self).__init__()
 
         self.backbone = timm.create_model(
@@ -18,11 +18,14 @@ class MultiPatchUNI(nn.Module):
         for i in range(num_classes):
             self.token_linear_heads.append(nn.Linear(embed_dim, 1))
         self.num_classes = num_classes
-        self.device = device
         self.frozen_backbone = frozen_backbone
 
         self.load_backbone()
 
+    @property
+    def device(self):
+        return next(self.parameters()).device
+    
     def load_backbone(self):
         params_weight = torch.load("checkpoints/pytorch_model.bin", map_location="cpu")
         print(self.backbone.load_state_dict(params_weight, strict=True))

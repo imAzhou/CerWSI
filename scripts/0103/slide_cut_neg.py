@@ -19,8 +19,10 @@ cut_nums_each = 150
 kfb_root_dir = '/medical-data/data'
 img_save_dir = 'data_resource/0103/images/Neg'
 os.makedirs(img_save_dir, exist_ok=True)
+anno_save_dir = 'data_resource/0103/annofiles'
+os.makedirs(anno_save_dir, exist_ok=True)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
 def process_patches(proc_id, set_group, valid_model, kfb_path, patientId):
@@ -59,8 +61,6 @@ def cut_random_neg():
     valid_model.eval()
     valid_model.load_state_dict(torch.load(valid_model_ckpt))
 
-    anno_save_dir = 'data_resource/0103/annofiles'
-
     train_csv = pd.read_csv('data_resource/ROI/annofile/1223_train.csv')
     val_csv = pd.read_csv('data_resource/ROI/annofile/1223_val.csv')
     filtered = {
@@ -82,7 +82,7 @@ def cut_random_neg():
             max_x, max_y = slide.level_dimensions[0]
             slide_patch_list = []
             start_time = time.time()
-            for i in tqdm(range(cut_nums_each)):
+            for i in tqdm(range(cut_nums_each), ncols=80):
                 x1,y1 = random.randint(0, max_x-PATCH_EDGE),random.randint(0, max_y-PATCH_EDGE)
                 read_result = Image.fromarray(slide.read_region((x1,y1), 0, (PATCH_EDGE,PATCH_EDGE)))
                 data_batch = dict(inputs=[], data_samples=[])
@@ -130,3 +130,8 @@ def cut_random_neg():
 
 if __name__ == '__main__':
     cut_random_neg()
+
+'''
+conda remove --name torch2_p310 --all
+tar -xzvf /nfs/zly/torch2_310.tar.gz -C /home/zly/miniconda3/envs/torch2_p310
+'''

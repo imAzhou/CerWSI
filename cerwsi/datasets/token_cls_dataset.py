@@ -6,14 +6,18 @@ from torchvision import transforms
 
 # 自定义数据集类
 class TokenClsDataset(Dataset):
-    def __init__(self, img_dir, json_filepath):
+    def __init__(self, root_dir, mode):
         """
         Args:
             img_dir (str): img dir
         """
-        self.root_dir = img_dir
-        with open(json_filepath, 'r') as f:
+
+        self.img_dir = f'{root_dir}/images'
+        self.annofiles_dir = f'{root_dir}/annofiles'
+
+        with open(f'{self.annofiles_dir}/{mode}_patches.json', 'r') as f:
             self.patch_infolist = json.load(f)
+        
         self.transform = transforms.Compose([
             transforms.Resize(224),
             transforms.ToTensor(),
@@ -25,7 +29,8 @@ class TokenClsDataset(Dataset):
 
     def __getitem__(self, idx):
         imginfo = self.patch_infolist[idx]
-        imgpath = f'{self.root_dir}/{imginfo["filename"]}'
+        
+        imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
         image = cv2.imread(imgpath)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -34,3 +39,4 @@ class TokenClsDataset(Dataset):
         token_label = imginfo['gtmap_14']
 
         return input_tensor,image_label,token_label
+

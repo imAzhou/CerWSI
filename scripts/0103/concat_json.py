@@ -11,7 +11,7 @@ def list_to_coo(matrix):
 
 if __name__ == '__main__':
     
-    json_root = '/x22201018/datasets/CervicalDatasets/data_resource/annofiles'
+    json_root = '/nfs5/zly/codes/CerWSI/data_resource/0103/annofiles'
     for mode in ['train','val']:
         datalist = []
         for clstype in ['pos','neg']:

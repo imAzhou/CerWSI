@@ -2,7 +2,7 @@
 # strategy
 lr = 0.0005
 weight_decay = 0.001
-max_epochs = 50
+max_epochs = 100
 warmup_epoch = 5
 gamma = 0.9
 save_each_epoch = False

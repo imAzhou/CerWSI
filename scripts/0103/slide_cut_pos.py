@@ -78,7 +78,7 @@ def process_pos_slide(rowInfo):
 
     patches_result = {} # key id patch id, value is patch anno info
 
-    pos_df = pd.read_csv('data_resource/ROI/annofile/1223_pos.csv')
+    pos_df = pd.read_csv('/nfs5/zly/codes/CerWSI/data_resource/ROI/annofile/1223_pos.csv')
     slide = KFBSlide(f'{args.data_root_dir}/{rowInfo.kfb_path}')
     swidth, sheight = slide.level_dimensions[0]
     total_cols = int(swidth // STRIDE) + 1
@@ -153,7 +153,7 @@ def makeGT(patch_list):
             x1,y1,x2,y2 = sorted_bbox_list[idx]
             x1,y1,x2,y2 = round(x1),round(y1),round(x2),round(y2)
             clsname = sorted_clsnames[idx]
-            clsid = classes.index(RECORD_CLASS[clsname])+1
+            clsid = classes.index(RECORD_CLASS[clsname])
             
             matched_grids = find_matching_bboxes(sorted_bbox_list[idx], grid_size, stride, min_overlap=10)
             for (row,col),_ in matched_grids:
@@ -298,9 +298,9 @@ if __name__ == '__main__':
 
 '''
 python scripts/0103/slide_cut_pos.py \
-    data_resource/ROI/annofile/1223_train.csv \
-    data_resource/ROI/annofile/1223_val.csv \
-    --save_dir data_resource/0103
+    /nfs5/zly/codes/CerWSI/data_resource/ROI/annofile/1223_train.csv \
+    /nfs5/zly/codes/CerWSI/data_resource/ROI/annofile/1223_val.csv \
+    --save_dir /nfs5/zly/codes/CerWSI/data_resource/0103
 
     
 train: 66158 patches.

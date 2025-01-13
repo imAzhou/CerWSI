@@ -1,39 +1,23 @@
-import timm
-import os
 import torch
-from torchvision import transforms
-from huggingface_hub import login, hf_hub_download
-from cerwsi.nets import MultiPatchUNI
-# login('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')  # login with your User Access Token, found at https://huggingface.co/settings/tokens
 
-local_dir = "checkpoints/"
-# os.makedirs(local_dir, exist_ok=True)  # create directory if it does not exist
-# hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=False)
+# 假设 logits_tensor 是 (num_classes, num_tokens) 的概率值 tensor
+logits_tensor = torch.tensor([
+    [0.1, 0.7, 0.2],  # 类别 0
+    [0.6, 0.8, 0.4],  # 类别 1
+    [0.3, 0.4, 0.1],  # 类别 2
+])
 
-# uni_model = timm.create_model(
-#     "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
-# )
+gt_tensor = torch.tensor([
+    [0, 0, 0],  # 类别 0
+    [0, 1, 1],  # 类别 1
+    [1, 1, 1],  # 类别 2
+])
 
-# params_weight = torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu")
-# uni_model.load_state_dict(params_weight, strict=True)
-# uni_model.eval()
-transform = transforms.Compose(
-    [
-        transforms.Resize(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-    ]
-)
+# 计算每个类别中 token > 0.5 的数量
+class_has_high_prob = (gt_tensor > 0.5).any(dim=1)
 
+# 获取类别索引
+class_indices = torch.nonzero(class_has_high_prob, as_tuple=False).squeeze(1)
 
-from PIL import Image
-image = Image.open("/x22201018/datasets/MedicalDatasets/CoNIC/train/img_dir/consep_1_0000.png")
-print(image.mode)
-image = transform(image).unsqueeze(dim=0) # Image (torch.Tensor) with shape [1, 3, 224, 224] following image resizing and normalization (ImageNet parameters)
-
-myModel = MultiPatchUNI(num_classes=6, device=torch.device('cuda:1'))
-logits = myModel(image)
-
-# with torch.inference_mode():
-#     feature_emb = uni_model.forward_features(image)
-#     print()
+# 输出类别索引
+print(class_indices)

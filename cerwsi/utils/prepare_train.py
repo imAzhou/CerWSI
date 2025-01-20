@@ -32,9 +32,13 @@ def get_logger(record_save_dir, model, print_cfg: Config, logger_name):
 
 def get_train_strategy(model, cfg):
     optimizerWrapper = build_optim_wrapper(model, cfg.optim_wrapper)
-    
+    current_lr = optimizerWrapper.param_groups[0]["lr"]
+
     '''slow start & fast decay'''
     def lr_lambda(epoch):
+        if cfg.min_lr > current_lr:
+            decay_factor = cfg.min_lr / cfg.lr
+            return decay_factor
         if epoch < cfg.warmup_epoch:
             return (epoch + 1) / cfg.warmup_epoch  # warm up 阶段线性增加
         else:

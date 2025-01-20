@@ -1,4 +1,5 @@
 import torch
+from PIL import Image
 from torch.utils.data import Dataset
 import cv2
 import json
@@ -31,8 +32,7 @@ class TokenClsDataset(Dataset):
         imginfo = self.patch_infolist[idx]
         
         imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
-        image = cv2.imread(imgpath)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.open(imgpath)
 
         input_tensor = self.transform(image)
         image_label = imginfo['diagnose']

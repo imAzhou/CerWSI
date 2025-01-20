@@ -12,7 +12,7 @@ from cerwsi.utils import MyMultiTokenMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
 POSITIVE_THR = 0.5
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '5,6,7'
 
 parser = argparse.ArgumentParser()
 # base args
@@ -111,7 +111,7 @@ def train_net(cfg, model, model_without_ddp):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
-                prime_metric = 'multi-label/img_accuracy'
+                prime_metric = 'multi-label/sensitivity'
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
@@ -136,10 +136,10 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone('checkpoints/pytorch_model.bin')
-    # ckpt = 'log/multi_patch_uni/2025_01_07_12_53_44/checkpoints/best.pth'
-    # init_weight = torch.load(ckpt)
-    # print(model_without_ddp.load_state_dict(init_weight))
+    # model_without_ddp.load_backbone('checkpoints/pytorch_model.bin')
+    ckpt = 'log/multi_patch_uni/2025_01_07_12_53_44/checkpoints/best.pth'
+    init_weight = torch.load(ckpt)
+    print(model_without_ddp.load_state_dict(init_weight))
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:

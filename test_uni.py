@@ -1,23 +1,21 @@
 import torch
+import timm
+from cerwsi.nets import MultiPatchUNI
 
-# 假设 logits_tensor 是 (num_classes, num_tokens) 的概率值 tensor
-logits_tensor = torch.tensor([
-    [0.1, 0.7, 0.2],  # 类别 0
-    [0.6, 0.8, 0.4],  # 类别 1
-    [0.3, 0.4, 0.1],  # 类别 2
-])
-
-gt_tensor = torch.tensor([
-    [0, 0, 0],  # 类别 0
-    [0, 1, 1],  # 类别 1
-    [1, 1, 1],  # 类别 2
-])
-
-# 计算每个类别中 token > 0.5 的数量
-class_has_high_prob = (gt_tensor > 0.5).any(dim=1)
+device = torch.device('cuda:0')
+model = MultiPatchUNI(num_classes = 6).to(device)
+with open('my_model.txt', 'w') as f:
+    f.writelines(model)
 
 # 获取类别索引
 class_indices = torch.nonzero(class_has_high_prob, as_tuple=False).squeeze(1)
 
-# 输出类别索引
-print(class_indices)
+uni_model = timm.create_model(
+            "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
+        )
+with open('uni_model.txt', 'w') as f:
+    f.writelines(str(uni_model))
+
+# for name, param in uni_model.named_parameters():
+#     if 'blocks' not in name:
+#         print(name)

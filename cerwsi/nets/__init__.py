@@ -5,3 +5,6 @@ from .patch_cls_net import PatchClsNet
 from .slide_cls_net import SlideClsNet
 # from .patch_cls_dino import PatchClsDINO
 from .multi_patch_uni import MultiPatchUNI
+
+from .multilabel_baseline.resnet import MultiResNet
+from .multilabel_baseline.vit import MultiVit

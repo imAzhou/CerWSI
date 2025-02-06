@@ -87,14 +87,30 @@ class MultiPatchUNI(nn.Module):
         x = x + pos_embed
         return x
 
+    def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
+        B, H, W, C = x.shape
+        prev_grid_size = self.backbone.patch_embed.grid_size
+        pos_embed = resample_abs_pos_embed(
+            self.pos_embed,
+            new_size=(H, W),
+            old_size=prev_grid_size,
+            num_prefix_tokens=self.num_classes,
+        )
+        x = x.view(B, -1, C)
+        to_cat = []
+        to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
+        x = torch.cat(to_cat + [x], dim=1)
+        x = x + pos_embed
+        return x
+
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.backbone.model.patch_embed(x)
+        x = self.backbone.patch_embed(x)
         # embed_x = self.backbone._pos_embed(x)
         embed_x = self._pos_embed(x)
-        x = self.backbone.model.patch_drop(embed_x)
-        x = self.backbone.model.norm_pre(x)
-        x = self.backbone.model.blocks(x)
-        x = self.backbone.model.norm(x)
+        x = self.backbone.patch_drop(embed_x)
+        x = self.backbone.norm_pre(x)
+        x = self.backbone.blocks(x)
+        x = self.backbone.norm(x)
         return x,embed_x
     
     def calc_logits(self, x: torch.Tensor):
@@ -107,7 +123,7 @@ class MultiPatchUNI(nn.Module):
         feature_emb,shallow_emb = self.forward_features(x)
         cls_neg_token = feature_emb[:,0,:]  # (bs, C)
         cls_pos_tokens = feature_emb[:,1:self.num_classes,:]  # (bs, num_cls-1, C)
-        img_tokens = feature_emb[:,self.num_classes:,:] # (bs, num_tokens, C)
+        img_tokens = feature_emb[:,self.num_classes:,:]
 
         simi_matrix = torch.matmul(cls_pos_tokens, img_tokens.transpose(1, 2))  # (bs, num_cls-1, num_tokens)
         simi_matrix = (simi_matrix - simi_matrix.mean(-1, keepdim=True)) / (simi_matrix.std(-1, keepdim=True) + 1e-8)
@@ -162,6 +178,16 @@ class MultiPatchUNI(nn.Module):
         
         token_loss = cont_loss + final_clshead_loss
         return token_loss
+
+    def calc_pos_loss(self, pos_logits, databatch):
+        loss_fn = nn.BCEWithLogitsLoss()
+        binary_matrix = torch.zeros_like(pos_logits, dtype=torch.float32)
+        for i, token_labels in enumerate(databatch['token_labels']):
+            label_list = list(set([tk[-1] -1 for tk in token_labels]))  # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
+            binary_matrix[i, label_list] = 1
+
+        loss = loss_fn(pos_logits, binary_matrix)
+        return loss
 
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()

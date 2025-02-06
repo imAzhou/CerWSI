@@ -333,3 +333,101 @@ class MyMultiTokenMetric(MultiLabelMetric):
             result_metrics[k + suffix] = v.detach().cpu().tolist()
         
         return result_metrics
+
+class MultiPosMetric(MultiLabelMetric):
+    def __init__(self,**args) -> None:
+        super(MultiPosMetric, self).__init__(**args)
+
+    def process(self, data_batch, data_samples):
+        """Process one batch of data samples.
+
+        The processed results should be stored in ``self.results``, which will
+        be used to computed the metrics when all batches have been processed.
+
+        Args:
+            data_batch: A batch of data from the dataloader.
+            data_samples (Sequence[dict]): A batch of outputs from the model.
+        """
+
+        thr = self.thr if self.thr else 0.3
+        data_samples = data_samples[0]
+        bs_pos_pred = (data_samples['pos_probs'] > thr).int()   # bs, num_cls-1
+
+        bs_img_gt = data_samples['image_labels']
+        bs_img_pred = [1 if sum(pred_list)>0 else 0 for pred_list in bs_pos_pred]
+        bs = bs_img_gt.shape[0]
+
+        self.num_classes = data_samples['pos_probs'].shape[-1] + 1
+
+        for bidx in range(bs):
+            gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
+            if len(gt_multi_label) == 0:
+                gt_multi_label = [0]
+            if bs_img_pred[bidx] == 0:
+                pred_multi_label = [0]
+            else:
+                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+
+            result = dict(
+                img_gt = bs_img_gt[bidx],
+                img_pred = bs_img_pred[bidx],
+                gt_multi_label = gt_multi_label,
+                pred_multi_label = pred_multi_label,
+            )
+
+            # Save the result to `self.results`.
+            self.results.append(result)
+
+    def compute_metrics(self, results):
+        """Compute the metrics from processed results.
+
+        Args:
+            results (list): The processed results of each batch.
+
+        Returns:
+            Dict: The computed metrics. The keys are the names of the metrics,
+            and the values are corresponding results.
+        """
+        # NOTICE: don't access `self.results` from the method. `self.results`
+        # are a list of results from multiple batch, while the input `results`
+        # are the collected results.
+        result_metrics = dict()
+
+        img_gt = [rs['img_gt'] for rs in results]
+        img_pred = [rs['img_pred'] for rs in results]
+        # feat_gt = torch.stack([rs['cls_feat_gt'] for rs in results]).flatten()
+        # feat_pred = torch.stack([rs['csl_feat_pred'] for rs in results]).flatten()
+
+        img_result = calculate_metrics(img_gt,img_pred)
+        for k,v in img_result.items():
+            if k != 'cm':
+                result_metrics['img_'+k] = v
+
+        gt_multi_label = [rs['gt_multi_label'] for rs in results]
+        pred_multi_label = [rs['pred_multi_label'] for rs in results]
+        metric_res = self.calculate(
+            pred_multi_label,
+            gt_multi_label,
+            pred_indices=True,
+            target_indices=True,
+            average=None,
+            num_classes=self.num_classes)
+
+        def pack_results(precision, recall, f1_score, support):
+            single_metrics = {}
+            if 'precision' in self.items:
+                single_metrics['precision'] = precision
+            if 'recall' in self.items:
+                single_metrics['recall'] = recall
+            if 'f1-score' in self.items:
+                single_metrics['f1-score'] = f1_score
+            if 'support' in self.items:
+                single_metrics['support'] = support
+            return single_metrics
+        
+        suffix = '_classwise' if self.thr == 0.5 else f'_thr-{self.thr:.2f}_classwise'
+        for k, v in pack_results(*metric_res).items():
+            result_metrics[k + suffix] = v.detach().cpu().tolist()
+        
+        return result_metrics
+

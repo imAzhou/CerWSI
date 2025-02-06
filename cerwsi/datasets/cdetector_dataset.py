@@ -6,7 +6,7 @@ import json
 from torchvision import transforms
 
 # 自定义数据集类
-class TokenClsDataset(Dataset):
+class CDetectorDataset(Dataset):
     def __init__(self, root_dir, mode):
         """
         Args:

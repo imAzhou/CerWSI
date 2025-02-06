@@ -47,17 +47,19 @@ def load_data(cfg):
     train_dataset = TokenClsDataset(cfg.data_root, 'train')
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
+                            pin_memory=True,
                             batch_size=cfg.train_bs, 
                             sampler = train_sampler,
                             collate_fn=custom_collate,
-                            num_workers=16)
+                            num_workers=8)
     val_dataset = TokenClsDataset(cfg.data_root, 'val')
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
+                            pin_memory=True,
                             batch_size=cfg.val_bs, 
                             sampler = val_sampler,
                             collate_fn=custom_collate,
-                            num_workers=16)
+                            num_workers=8)
     
     return train_loader, val_loader
 
@@ -136,10 +138,10 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone('checkpoints/pytorch_model.bin')
-    # ckpt = 'log/multi_patch_uni/2025_01_07_12_53_44/checkpoints/best.pth'
-    # init_weight = torch.load(ckpt)
-    # print(model_without_ddp.load_state_dict(init_weight))
+    # model_without_ddp.load_backbone('checkpoints/uni.bin')
+    ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
+    init_weight = torch.load(ckpt)
+    print(model_without_ddp.load_state_dict(init_weight))
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:

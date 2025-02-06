@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from timm import create_model
+from timm.layers import resample_abs_pos_embed
 import math
 import torch.nn.functional as F
 from mmengine.optim import OptimWrapper
@@ -14,11 +15,20 @@ class MultiPatchUNI(nn.Module):
         )
         
         self.embed_dim = self.backbone.embed_dim
-        self.feat_cluster_conv = nn.Conv2d(self.embed_dim, self.embed_dim, 3,1,1)
-        self.cls_linear_head = nn.Linear(self.embed_dim, 1)
+        # self.feat_cluster_conv = nn.Conv2d(self.embed_dim, self.embed_dim, 3,1,1)
+        # self.cls_linear_head = nn.Linear(self.embed_dim, 1)
+        self.cls_token = nn.Parameter(torch.zeros(1, num_classes, self.embed_dim))
+        num_patches = self.backbone.patch_embed.num_patches
+        embed_len = num_patches + num_classes
+        self.pos_embed = nn.Parameter(torch.randn(1, embed_len, self.embed_dim) * .02)
+        self.cls_neg_head = nn.Linear(self.embed_dim + (num_classes-1), 1)
+        self.cls_pos_heads = nn.ModuleList()
+        for i in range(num_classes-1):
+            self.cls_pos_heads.append(nn.Linear(num_patches, 1))
+        
         self.drop_neg_ratio = 0.5 # 样本平衡因子，阴性token丢弃比例
         self.feat_loss_factor = 0.5
-        self.token_linear_head = nn.Linear(self.embed_dim, num_classes)
+        # self.token_linear_head = nn.Linear(self.embed_dim, num_classes)
         # self.token_linear_heads = nn.ModuleList()
         # for i in range(num_classes):
         #     self.token_linear_heads.append(nn.Linear(self.embed_dim, 1))
@@ -32,16 +42,34 @@ class MultiPatchUNI(nn.Module):
         params_weight = torch.load(ckpt, map_location=self.device)
         print(self.backbone.load_state_dict(params_weight, strict=False))
         
-        update_params = ['cls_token']
+        # update_params = ['cls_token']
+        update_params = []
         if frozen:
             for name, param in self.backbone.named_parameters():
                 param.requires_grad = False
                 if name in update_params:
                     param.requires_grad = True
 
+    def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
+        B, H, W, C = x.shape
+        prev_grid_size = self.backbone.patch_embed.grid_size
+        pos_embed = resample_abs_pos_embed(
+            self.pos_embed,
+            new_size=(H, W),
+            old_size=prev_grid_size,
+            num_prefix_tokens=self.num_classes,
+        )
+        x = x.view(B, -1, C)
+        to_cat = []
+        to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
+        x = torch.cat(to_cat + [x], dim=1)
+        x = x + pos_embed
+        return x
+
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone.patch_embed(x)
-        embed_x = self.backbone._pos_embed(x)
+        # embed_x = self.backbone._pos_embed(x)
+        embed_x = self._pos_embed(x)
         x = self.backbone.patch_drop(embed_x)
         x = self.backbone.norm_pre(x)
         x = self.backbone.blocks(x)
@@ -56,20 +84,23 @@ class MultiPatchUNI(nn.Module):
         '''
         # feature_emb.shape: (bs,cls_token+img_token, C)
         feature_emb,shallow_emb = self.forward_features(x)
-        cls_token = feature_emb[:,0,:]  # (bs, C)
-        img_logits = self.cls_linear_head(cls_token)
+        cls_neg_token = feature_emb[:,0,:]  # (bs, C)
+        cls_pos_tokens = feature_emb[:,1:self.num_classes,:]  # (bs, num_cls-1, C)
+        img_tokens = feature_emb[:,self.num_classes:,:]
 
-        # feature_tokens = feature_emb[:,1:,:]  # (bs, nums, C)
-        feature_tokens = shallow_emb[:,1:,:]  # (bs, nums, C)
-        bs,num_tokens,c = feature_tokens.shape
-        feat_hw = int(math.sqrt(num_tokens))
-        feat_token_2D = feature_tokens.reshape((bs,feat_hw,feat_hw,c)).permute(0,3,1,2)
-        feature_tokens_cluster = self.feat_cluster_conv(feat_token_2D)
-        flatten_cluster = feature_tokens_cluster.flatten(2).permute(0,2,1)
-        token_fused = feature_tokens + flatten_cluster
+        simi_matrix = torch.matmul(cls_pos_tokens, img_tokens.transpose(1, 2))  # (bs, num_cls-1, num_tokens)
+        simi_matrix = (simi_matrix - simi_matrix.mean(-1, keepdim=True)) / (simi_matrix.std(-1, keepdim=True) + 1e-8)
 
-        feat_logits = self.token_linear_head(token_fused)
-        return img_logits,feat_logits
+        avg_pos_token = torch.mean(simi_matrix, dim=-1)
+        overall_neg_token = torch.cat([cls_neg_token,avg_pos_token], dim=-1 )
+        pred_img_neg_logits = self.cls_neg_head(overall_neg_token)  # (bs, 1)
+
+        pred_img_pos_logits = []
+        for i in range(self.num_classes-1):
+            pred_img_pos_logits.append(self.cls_pos_heads[i](simi_matrix[:,i,:]))  # [(bs, 1),]
+        
+        pred_img_pos_logits = torch.cat(pred_img_pos_logits, dim=-1)  # (bs, num_cls-1)
+        return pred_img_neg_logits, pred_img_pos_logits
     
     def create_feat_gt(self, logits_shape, databatch):
         bs,num_tokens,_ = logits_shape
@@ -103,6 +134,16 @@ class MultiPatchUNI(nn.Module):
         final_clshead_loss = masked_loss.sum() / balanced_mask.sum().float()
         return final_clshead_loss
 
+    def calc_pos_loss(self, pos_logits, databatch):
+        loss_fn = nn.BCEWithLogitsLoss()
+        binary_matrix = torch.zeros_like(pos_logits, dtype=torch.float32)
+        for i, token_labels in enumerate(databatch['token_labels']):
+            label_list = list(set([tk[-1] -1 for tk in token_labels]))  # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
+            binary_matrix[i, label_list] = 1
+
+        loss = loss_fn(pos_logits, binary_matrix)
+        return loss
+
     def forward(self, data_batch, mode, optim_wrapper=None):        
         if mode == 'train':
             return self.train_step(data_batch, optim_wrapper)
@@ -112,20 +153,25 @@ class MultiPatchUNI(nn.Module):
     def train_step(self, databatch, optim_wrapper:OptimWrapper):
         input_x = databatch['images']   # (bs, c, h, w)
         # img_logits: (bs, 1)
-        img_logits,feat_logits = self.calc_logits(input_x.to(self.device))
+        # img_logits,feat_logits = self.calc_logits(input_x.to(self.device))
+        img_neg_logits,img_pos_logits = self.calc_logits(input_x.to(self.device))
         img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
-        img_loss = F.binary_cross_entropy_with_logits(img_logits, img_gt, reduction='mean')
-        feat_loss = self.calc_feat_loss(feat_logits, databatch)
         
-        loss = (1-self.feat_loss_factor)*img_loss + self.feat_loss_factor*feat_loss
+        img_neg_loss = F.binary_cross_entropy_with_logits(img_neg_logits, img_gt, reduction='mean')
+        # feat_loss = self.calc_feat_loss(feat_logits, databatch)
+        img_pos_loss = self.calc_pos_loss(img_pos_logits, databatch)
+        loss = img_neg_loss + img_pos_loss
+        
+        # loss = (1-self.feat_loss_factor)*img_loss + self.feat_loss_factor*feat_loss
         optim_wrapper.update_params(loss)
         return loss
 
     def val_step(self, databatch):
         input_x = databatch['images']
-        img_logits,feat_logits = self.calc_logits(input_x.to(self.device))
-        feat_gt,balanced_mask = self.create_feat_gt(feat_logits.shape, databatch)
-        databatch['feat_gt'] = feat_gt  # bs, num_tokens
-        databatch['img_probs'] = torch.sigmoid(img_logits).squeeze(-1)   # (bs, )
-        databatch['feat_probs'] = feat_logits  # (bs, num_tokens, num_classes)
+        # img_logits,feat_logits = self.calc_logits(input_x.to(self.device))
+        # feat_gt,balanced_mask = self.create_feat_gt(feat_logits.shape, databatch)
+        img_neg_logits,img_pos_logits = self.calc_logits(input_x.to(self.device))
+
+        databatch['img_probs'] = torch.sigmoid(img_neg_logits).squeeze(-1)   # (bs, )
+        databatch['pos_probs'] = torch.sigmoid(img_pos_logits)  # (bs, num_classes-1)
         return databatch

@@ -36,7 +36,18 @@ class TokenClsDataset(Dataset):
 
         input_tensor = self.transform(image)
         image_label = imginfo['diagnose']
-        token_label = imginfo['gtmap_14']
+        gtmap_14 = imginfo['gtmap_14']
+        label_map = {
+            1:1,
+            2:1,
+            3:2,
+            4:2,
+            5:3
+        }
+        token_label = []
+        for label in imginfo['gtmap_14']:
+            h,w,cid = label
+            token_label.append([h,w,label_map[cid]])
 
-        return input_tensor,image_label,token_label
+        return input_tensor,image_label,token_label,gtmap_14,imgpath
 

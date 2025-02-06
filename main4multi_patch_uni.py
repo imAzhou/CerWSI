@@ -47,17 +47,19 @@ def load_data(cfg):
     train_dataset = TokenClsDataset(cfg.data_root, 'train')
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
+                            pin_memory=True,
                             batch_size=cfg.train_bs, 
                             sampler = train_sampler,
                             collate_fn=custom_collate,
-                            num_workers=16)
+                            num_workers=8)
     val_dataset = TokenClsDataset(cfg.data_root, 'val')
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
+                            pin_memory=True,
                             batch_size=cfg.val_bs, 
                             sampler = val_sampler,
                             collate_fn=custom_collate,
-                            num_workers=16)
+                            num_workers=8)
     
     return train_loader, val_loader
 
@@ -129,14 +131,15 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = MultiPatchUNI(num_classes = d_cfg['num_classes']).to(device)
+    model = MultiPatchUNI(num_classes = d_cfg['num_classes'], temperature=cfg.temperature).to(device)
     model_without_ddp = model
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone('checkpoints/pytorch_model.bin')
+    # model_without_ddp.load_backbone('checkpoints/pytorch_model.bin')
+    model_without_ddp.load_backbone_with_LoRA('checkpoints/pytorch_model.bin')
     # ckpt = 'log/multi_patch_uni/2025_01_07_12_53_44/checkpoints/best.pth'
     # init_weight = torch.load(ckpt)
     # print(model_without_ddp.load_state_dict(init_weight))

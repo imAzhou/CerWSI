@@ -10,7 +10,7 @@ def calculate_metrics(y_true, y_pred):
     accuracy = accuracy_score(y_true, y_pred)
 
     # 特异性 (Specificity)
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
     specificity = tn / (tn + fp)
     sensitivity = tp / (tp + fn)
@@ -236,23 +236,32 @@ class MyMultiTokenMetric(MultiLabelMetric):
         bs_img_gt = data_samples['image_labels']
         bs_img_pred = (data_samples['img_probs'] > thr).int()
         bs = bs_img_gt.shape[0]
-        
-        cls_feat_gt = data_samples['feat_gt']   # bs, num_tokens
-        csl_feat_pred = torch.argmax(data_samples['feat_probs'], dim=-1)   # bs, num_tokens
 
-        self.num_classes = data_samples['feat_probs'].shape[-1]
+        bs_pos_pred = (data_samples['pos_probs'] > thr).int()   # bs, num_cls-1
+        
+        # feat_gt = data_samples['feat_gt']   # bs, num_tokens
+        # csl_feat_pred = torch.argmax(data_samples['feat_probs'], dim=-1)   # bs, num_tokens
+
+        self.num_classes = data_samples['pos_probs'].shape[-1] + 1
 
         for bidx in range(bs):
-            feat_gt = cls_feat_gt[bidx,:]
-            feat_pred = csl_feat_pred[bidx,:]
-            gt_multi_label = torch.unique(feat_gt, dim=-1)
-            pred_multi_label = torch.unique(feat_pred, dim=-1)
+            gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
+            if len(gt_multi_label) == 0:
+                gt_multi_label = [0]
+            if bs_img_pred[bidx] == 0:
+                pred_multi_label = [0]
+            else:
+                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+            # feat_gt = cls_feat_gt[bidx,:]
+            # feat_pred = csl_feat_pred[bidx,:]
+            # gt_multi_label = torch.unique(feat_gt, dim=-1)
+            # pred_multi_label = torch.unique(feat_pred, dim=-1)
 
             result = dict(
                 img_gt = bs_img_gt[bidx],
                 img_pred = bs_img_pred[bidx],
-                cls_feat_gt = cls_feat_gt[bidx],
-                csl_feat_pred = csl_feat_pred[bidx],
+                # cls_feat_gt = cls_feat_gt[bidx],
+                # csl_feat_pred = csl_feat_pred[bidx],
                 gt_multi_label = gt_multi_label,
                 pred_multi_label = pred_multi_label,
             )
@@ -277,25 +286,25 @@ class MyMultiTokenMetric(MultiLabelMetric):
 
         img_gt = [rs['img_gt'] for rs in results]
         img_pred = [rs['img_pred'] for rs in results]
-        feat_gt = torch.stack([rs['cls_feat_gt'] for rs in results]).flatten()
-        feat_pred = torch.stack([rs['csl_feat_pred'] for rs in results]).flatten()
+        # feat_gt = torch.stack([rs['cls_feat_gt'] for rs in results]).flatten()
+        # feat_pred = torch.stack([rs['csl_feat_pred'] for rs in results]).flatten()
 
         img_result = calculate_metrics(img_gt,img_pred)
         for k,v in img_result.items():
             if k != 'cm':
                 result_metrics['img_'+k] = v
         
-        token_result = {'precision':[],'recall':[]}
-        token_result['acc'] = accuracy_score(feat_gt, feat_pred)
-        report = classification_report(feat_gt, feat_pred, output_dict=True)
-        for cls, metrics in report.items():
-            if isinstance(metrics, dict) and 'avg' not in cls:  # 跳过 'accuracy' 总值
-                token_result['precision'].append(metrics['precision'])
-                token_result['recall'].append(metrics['recall'])
-        token_result['macro_avg'] = report['macro avg']
-        for k,v in token_result.items():
-            if k != 'cm':
-                result_metrics['token_'+k] = v
+        # token_result = {'precision':[],'recall':[]}
+        # token_result['acc'] = accuracy_score(feat_gt, feat_pred)
+        # report = classification_report(feat_gt, feat_pred, output_dict=True)
+        # for cls, metrics in report.items():
+        #     if isinstance(metrics, dict) and 'avg' not in cls:  # 跳过 'accuracy' 总值
+        #         token_result['precision'].append(metrics['precision'])
+        #         token_result['recall'].append(metrics['recall'])
+        # token_result['macro_avg'] = report['macro avg']
+        # for k,v in token_result.items():
+        #     if k != 'cm':
+        #         result_metrics['token_'+k] = v
 
         gt_multi_label = [rs['gt_multi_label'] for rs in results]
         pred_multi_label = [rs['pred_multi_label'] for rs in results]

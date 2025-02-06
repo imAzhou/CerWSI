@@ -194,6 +194,12 @@ def generate_cut_regions(region_start, region_width, region_height, k, stride=40
     return cut_regions
 
 def draw_OD(read_image, save_path, square_coords, inside_items, category_colors):
+    '''
+    square_coords: list|tuple, [x1,y1,w,h]
+    inside_items: list[
+        dict(sub_class:str,region:dict(x,y,width,height))]
+    category_colors: dict
+    '''
     draw = ImageDraw.Draw(read_image)
     sq_x1,sq_y1,sq_w,sq_h = square_coords
 

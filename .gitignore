@@ -1,6 +1,7 @@
 .vscode/
 .dist_test/
 checkpoints/
+before_0103_log/
 log/
 statistic_results/
 data_resource/

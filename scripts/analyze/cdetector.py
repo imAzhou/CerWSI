@@ -174,6 +174,7 @@ def analayze_img_nums():
         
         train: window size: 406, pos_nums: 36690, neg_nums: 28776
         test: window size: 406, pos_nums: 4117, neg_nums: 3571
+        total: pos_nums: 40807, neg_nums: 32347
         '''
 
 

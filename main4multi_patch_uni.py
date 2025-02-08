@@ -131,7 +131,7 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = MultiPatchUNI(num_classes = d_cfg['num_classes']).to(device)
+    model = MultiPatchUNI(num_classes = d_cfg['num_classes'], temperature=cfg.temperature).to(device)
     model_without_ddp = model
 
     if args.distributed:

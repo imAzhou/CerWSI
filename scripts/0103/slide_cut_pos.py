@@ -53,7 +53,7 @@ def find_matching_bboxes(target_bbox, grid_size = PATCH_EDGE, stride = STRIDE, m
             x2_max = x2_min + grid_size
             y2_max = y2_min + grid_size
             bbox = [x2_min, y2_min, x2_max, y2_max]
-            # 判断完全包含
+            # 判断完全包含 (target_bbox完全在该patch内部)
             if is_bbox_inside(target_bbox, bbox):
                 relative_bbox = [x1_min - x2_min, y1_min - y2_min, x1_max - x2_min, y1_max - y2_min]
                 matching_bboxes.append(([row,col], relative_bbox))
@@ -76,7 +76,7 @@ def find_matching_bboxes(target_bbox, grid_size = PATCH_EDGE, stride = STRIDE, m
 
 def process_pos_slide(rowInfo):
 
-    patches_result = {} # key id patch id, value is patch anno info
+    patches_result = {} # key is patch id, value is patch anno info
 
     pos_df = pd.read_csv('/nfs5/zly/codes/CerWSI/data_resource/ROI/annofile/1223_pos.csv')
     slide = KFBSlide(f'{args.data_root_dir}/{rowInfo.kfb_path}')

@@ -212,8 +212,6 @@ def makeGT(bboxes,clsnames):
     return gtmap
     
 def gene_img_json():
-    root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
-
     pos_save_dir = f'{root_dir}/images/Pos'
     os.makedirs(pos_save_dir, exist_ok=True)
     neg_save_dir = f'{root_dir}/images/Neg'
@@ -276,4 +274,6 @@ def gene_img_json():
         
 
 if __name__ == '__main__':
+    # root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    root_dir = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset'
     gene_img_json()

@@ -138,10 +138,10 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    # model_without_ddp.load_backbone('checkpoints/uni.bin')
-    ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
-    init_weight = torch.load(ckpt)
-    print(model_without_ddp.load_state_dict(init_weight))
+    model_without_ddp.load_backbone_with_LoRA('checkpoints/uni.bin')
+    # ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
+    # init_weight = torch.load(ckpt)
+    # print(model_without_ddp.load_state_dict(init_weight))
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_uni.py \
+CUDA_VISIBLE_DEVICES=0,1,4,6 torchrun  --nproc_per_node=4 --master_port=12345 main4multi_patch_uni.py \
     configs/dataset/multi_patch_uni_dataset.py \
     configs/train_strategy.py \
     --record_save_dir log/multi_patch_uni

@@ -176,7 +176,7 @@ class MultiPatchUNI(nn.Module):
         token_gt = feat_gt[indices]
         cont_loss = contrastive_loss(contrast_feat, token_gt, self.temperature)
         
-        token_loss = cont_loss + final_clshead_loss
+        token_loss = 0.1*cont_loss + final_clshead_loss
         return token_loss
 
     def calc_pos_loss(self, pos_logits, databatch):

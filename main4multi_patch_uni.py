@@ -154,5 +154,5 @@ if __name__ == '__main__':
 CUDA_VISIBLE_DEVICES=0,1,4,6 torchrun  --nproc_per_node=4 --master_port=12345 main4multi_patch_uni.py \
     configs/dataset/multi_patch_uni_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/multi_patch_uni
+    --record_save_dir log/cdetector_ours
 '''

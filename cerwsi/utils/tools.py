@@ -227,6 +227,11 @@ def draw_OD(read_image, save_path, square_coords, inside_items, category_colors)
         mpatches.Patch(color=np.array(color) / 255.0, label=category)  # Matplotlib 支持归一化颜色
         for category, color in category_colors.items()
     ]
-    ax.legend(handles=patches, loc='upper right', bbox_to_anchor=(1.35, 1), frameon=False)
+    # 获取图形的尺寸（单位：英寸）
+    fig_width, fig_height = fig.get_size_inches()
+    # 将图例偏移图像尺寸的1.5%
+    offset_in_inches = 1.5 / fig_width
+
+    ax.legend(handles=patches, loc='upper right', bbox_to_anchor=(1+offset_in_inches, 1), frameon=False)
     fig.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
     plt.close(fig)

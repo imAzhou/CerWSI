@@ -170,14 +170,14 @@ class MultiPatchUNI(nn.Module):
         final_clshead_loss = masked_loss.sum() / balanced_mask.sum().float()
         
         # img_tokens: (bs, num_tokens, C)   feat_gt/balanced_mask:(bs, num_tokens)
-        indices = balanced_mask.nonzero(as_tuple=True)
-        contrast_feat = img_tokens[indices]
-        contrast_feat = F.normalize(contrast_feat, dim=-1)  # bs*num_tokens, c
-        token_gt = feat_gt[indices]
-        cont_loss = contrastive_loss(contrast_feat, token_gt, self.temperature)
+        # indices = balanced_mask.nonzero(as_tuple=True)
+        # contrast_feat = img_tokens[indices]
+        # contrast_feat = F.normalize(contrast_feat, dim=-1)  # bs*num_tokens, c
+        # token_gt = feat_gt[indices]
+        # cont_loss = contrastive_loss(contrast_feat, token_gt, self.temperature)
+        # token_loss = cont_loss + final_clshead_loss
         
-        token_loss = 0.1*cont_loss + final_clshead_loss
-        return token_loss
+        return final_clshead_loss
 
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()

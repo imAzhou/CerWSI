@@ -6,7 +6,7 @@ def list_to_coo(matrix):
     for i, row in enumerate(matrix):
         for j, value in enumerate(row):
             if value != 0:
-                coo.append((i, j, int(value)-1))
+                coo.append((i, j, int(value)))
     return coo
 
 if __name__ == '__main__':

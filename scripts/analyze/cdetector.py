@@ -172,14 +172,34 @@ def analayze_img_nums():
         train: window size: 500, pos_nums: 32488, neg_nums: 16180
         test: window size: 500, pos_nums: 3687, neg_nums: 1949
         
-        train: window size: 406, pos_nums: 36690, neg_nums: 28776
-        test: window size: 406, pos_nums: 4117, neg_nums: 3571
+        train: window size: 406, pos_nums: 36690, neg_nums: 28776, total: 65466
+        test: window size: 406, pos_nums: 4117, neg_nums: 3571, total: 7688
         total: pos_nums: 40807, neg_nums: 32347
         '''
+
+def analyze_cls_dist():
+    for mode in ['train', 'val']:
+        json_path = f'{root_dir}/annofiles/{mode}_patches.json'
+        with open(json_path, 'r') as f:
+            annofile = json.load(f)
+        cls_cnt = [0]*len(POSITIVE_CLASS)
+        for imganno in tqdm(annofile, ncols=80):
+            pos_clsid = list(set([i[-1] for i in imganno['gtmap_14']]))
+            for clsid in pos_clsid:
+                cls_cnt[clsid-1] += 1
+        print(f'{mode}: {cls_cnt}')
+
+    '''
+    含某类别的总图像样本数量，例如：训练集中有3666张图片内含类别ASC-US
+    clsname: ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
+    train: [3666, 3481, 5044, 21979, 6454]
+    val: [413, 393, 557, 2289, 869]
+    '''
 
 
 if __name__ == '__main__':
     root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
     # analyze_img_wh()
     # vis_sample_img()
-    analayze_img_nums()
+    # analayze_img_nums()
+    analyze_cls_dist()

@@ -138,7 +138,8 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone_with_LoRA('checkpoints/uni.bin')
+    model_without_ddp.load_backbone('checkpoints/uni.bin',frozen=False)
+    # model_without_ddp.load_backbone_with_LoRA('checkpoints/uni.bin')
     # ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
     # init_weight = torch.load(ckpt)
     # print(model_without_ddp.load_state_dict(init_weight))

@@ -8,3 +8,4 @@ from .multi_patch_uni import MultiPatchUNI
 
 from .multilabel_baseline.resnet import MultiResNet
 from .multilabel_baseline.vit import MultiVit
+from .multilabel_baseline.uni import MultiUNI

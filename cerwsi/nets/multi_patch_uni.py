@@ -9,20 +9,22 @@ from mmengine.optim import OptimWrapper
 from cerwsi.utils import contrastive_loss
 
 class MultiPatchUNI(nn.Module):
-    def __init__(self, num_classes, temperature):
+    def __init__(self, num_classes, use_lora, temperature):
         super(MultiPatchUNI, self).__init__()
 
         self.backbone = create_model(
             "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
         )
-        self.lora_config = LoraConfig(
-            r=8,  # LoRA 的秩
-            lora_alpha=16,  # LoRA 的缩放因子
-            target_modules = ["qkv", "proj", "fc1", "fc2"],  # 应用 LoRA 的目标模块
-            lora_dropout=0.1,  # Dropout 概率
-            bias="none",  # 是否调整偏置
-        )
-        self.temperature = temperature
+        self.use_lora = use_lora
+        if use_lora:
+            self.lora_config = LoraConfig(
+                r=8,  # LoRA 的秩
+                lora_alpha=16,  # LoRA 的缩放因子
+                target_modules = ["qkv", "proj", "fc1", "fc2"],  # 应用 LoRA 的目标模块
+                lora_dropout=0.1,  # Dropout 概率
+                bias="none",  # 是否调整偏置
+            )
+            self.temperature = temperature
         
         self.embed_dim = self.backbone.embed_dim
         # self.feat_cluster_conv = nn.Conv2d(self.embed_dim, self.embed_dim, 3,1,1)
@@ -52,28 +54,31 @@ class MultiPatchUNI(nn.Module):
         params_weight = torch.load(ckpt, map_location=self.device)
         print(self.backbone.load_state_dict(params_weight, strict=False))
         
-        # update_params = ['cls_token']
-        update_params = []
-        if frozen:
-            for name, param in self.backbone.named_parameters():
-                param.requires_grad = False
-                if name in update_params:
-                    param.requires_grad = True
+        if self.use_lora:
+            self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
+        else:
+            # update_params = ['cls_token']
+            update_params = []
+            if frozen:
+                for name, param in self.backbone.named_parameters():
+                    param.requires_grad = False
+                    if name in update_params:
+                        param.requires_grad = True
     
-    def load_backbone_with_LoRA(self, ckpt):
+    def load_ckpt(self, ckpt):
         params_weight = torch.load(ckpt, map_location=self.device)
-        print(self.backbone.load_state_dict(params_weight, strict=False))
-
-        self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
-    
-    def load_ckpt_with_LoRA(self, ckpt):
-        params_weight = torch.load(ckpt, map_location=self.device)
-        self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
+        if self.use_lora:
+            self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
+        
         print(self.load_state_dict(params_weight, strict=True))
 
+
     def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
         B, H, W, C = x.shape
-        prev_grid_size = self.backbone.model.patch_embed.grid_size
+        if self.use_lora:
+            prev_grid_size = self.backbone.model.patch_embed.grid_size
+        else:
+            prev_grid_size = self.backbone.patch_embed.grid_size
         pos_embed = resample_abs_pos_embed(
             self.pos_embed,
             new_size=(H, W),
@@ -87,21 +92,6 @@ class MultiPatchUNI(nn.Module):
         x = x + pos_embed
         return x
 
-    def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
-        B, H, W, C = x.shape
-        prev_grid_size = self.backbone.patch_embed.grid_size
-        pos_embed = resample_abs_pos_embed(
-            self.pos_embed,
-            new_size=(H, W),
-            old_size=prev_grid_size,
-            num_prefix_tokens=self.num_classes,
-        )
-        x = x.view(B, -1, C)
-        to_cat = []
-        to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
-        x = torch.cat(to_cat + [x], dim=1)
-        x = x + pos_embed
-        return x
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone.patch_embed(x)
@@ -178,16 +168,6 @@ class MultiPatchUNI(nn.Module):
         # token_loss = cont_loss + final_clshead_loss
         
         return final_clshead_loss
-
-    def calc_pos_loss(self, pos_logits, databatch):
-        loss_fn = nn.BCEWithLogitsLoss()
-        binary_matrix = torch.zeros_like(pos_logits, dtype=torch.float32)
-        for i, token_labels in enumerate(databatch['token_labels']):
-            label_list = list(set([tk[-1] -1 for tk in token_labels]))  # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
-            binary_matrix[i, label_list] = 1
-
-        loss = loss_fn(pos_logits, binary_matrix)
-        return loss
 
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()

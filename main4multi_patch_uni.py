@@ -131,7 +131,11 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = MultiPatchUNI(num_classes = d_cfg['num_classes'], temperature=cfg.temperature).to(device)
+    model = MultiPatchUNI(
+        num_classes = d_cfg['num_classes'], 
+        use_lora=cfg.use_lora,
+        temperature=cfg.temperature
+    ).to(device)
     model_without_ddp = model
 
     if args.distributed:
@@ -140,8 +144,7 @@ def main():
     
     model_without_ddp.load_backbone('checkpoints/uni.bin', frozen=False)
     # ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
-    # init_weight = torch.load(ckpt)
-    # print(model_without_ddp.load_state_dict(init_weight))
+    # print(model_without_ddp.load_ckpt(ckpt))
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -151,8 +154,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,6,7 torchrun  --nproc_per_node=4 --master_port=12345 main4multi_patch_uni.py \
-    configs/dataset/multi_patch_uni_dataset.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_uni.py \
+    configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/multi_patch_uni
+    --record_save_dir log/debug
 '''

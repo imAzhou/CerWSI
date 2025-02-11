@@ -275,5 +275,7 @@ def gene_img_json():
 
 if __name__ == '__main__':
     # root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
-    root_dir = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    # root_dir = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    root_dir = '/disk/medical_datasets/cervix/ComparisonDetectorDataset'
+    
     gene_img_json()

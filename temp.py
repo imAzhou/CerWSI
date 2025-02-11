@@ -39,8 +39,15 @@ from cerwsi.nets import MultiPatchUNI
 
 # vit-large-p14_dinov2-pre_3rdparty
 # vit-large-p16_in21k-pre_3rdparty_in1k-384px
-model = get_model('vit-large-p14_dinov2-pre_3rdparty', 
-                  pretrained='checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth').backbone
+model = get_model('vit-large-p14_dinov2-pre_3rdparty', pretrained=False).backbone
+ckpt = 'checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth'
+params_weight = torch.load(ckpt)
+new_state_dict = {}
+for key,value in params_weight['state_dict'].items():
+    new_name = key.replace('backbone.', '')
+    new_state_dict[new_name] = value
+print(model.load_state_dict(new_state_dict, strict=False))
+
 print(model.embed_dims)
 inputs = torch.rand(1, 3, 224, 224)
 feats = model(inputs)

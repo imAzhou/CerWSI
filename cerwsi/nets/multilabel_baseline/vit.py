@@ -7,16 +7,12 @@ class MultiVit(nn.Module):
     def __init__(self, num_classes, backbone_type):
         super(MultiVit, self).__init__()
         assert backbone_type in ['vit','dinov2']
-        backbone_config = {
-            'vit':{
-                'model_name':'vit-large-p16_in21k-pre_3rdparty_in1k-384px', 
-                'ckpt':'checkpoints/vit-large-p16_in21k-pre-3rdparty_ft-64xb64_in1k-384_20210928-b20ba619.pth'},
-            'dinov2':{
-                'model_name':'vit-large-p14_dinov2-pre_3rdparty', 
-                'ckpt': 'checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth'}
+        backbone_model_name = {
+            'vit': 'vit-large-p16_in21k-pre_3rdparty_in1k-384px',
+            'dinov2': 'vit-large-p14_dinov2-pre_3rdparty'
         }
-        self.backbone = get_model(backbone_config[backbone_type]['model_name'], 
-                  pretrained=backbone_config[backbone_type]['ckpt']).backbone
+        self.backbone_type = backbone_type
+        self.backbone = get_model(backbone_model_name[backbone_type], pretrained=False).backbone
         self.embed_dim = self.backbone.embed_dims
         self.cls_linear_heads = nn.ModuleList()
         for i in range(num_classes-1):  # 只判断 image 中含不含阳性 token
@@ -26,6 +22,23 @@ class MultiVit(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    def load_backbone(self, ckpt, frozen=True):
+        params_weight = torch.load(ckpt, map_location=self.device)
+        new_state_dict = {}
+        if self.backbone_type == 'vit':
+            state_dict = params_weight
+        if self.backbone_type == 'dinov2':
+            state_dict = params_weight['state_dict']
+        
+        for key,value in state_dict.items():
+            new_name = key.replace('backbone.', '')
+            new_state_dict[new_name] = value
+        print(self.backbone.load_state_dict(new_state_dict, strict=False))
+        
+        if frozen:
+            for name, param in self.backbone.named_parameters():
+                param.requires_grad = False
 
     
     def calc_logits(self, x: torch.Tensor):

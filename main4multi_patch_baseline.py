@@ -135,17 +135,18 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    # model = MultiResNet(num_classes = d_cfg['num_classes']).to(device)
-    # model = MultiVit(num_classes = d_cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
-    model = MultiUNI(num_classes = d_cfg['num_classes']).to(device)
+    if cfg.baseline_backbone == 'resnet50':
+        model = MultiResNet(num_classes = d_cfg['num_classes']).to(device)
+    elif cfg.baseline_backbone in ['vit', 'dinov2']:
+        model = MultiVit(num_classes = d_cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
+    elif cfg.baseline_backbone == 'uni':
+        model = MultiUNI(num_classes = d_cfg['num_classes']).to(device)
+    
     model_without_ddp = model
-
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    
-    # model_without_ddp.load_backbone('checkpoints/resnet50_a1_0-14fe96d1.pth',frozen=False)
-    model_without_ddp.load_backbone('checkpoints/uni.bin',frozen=False)
+    model_without_ddp.load_backbone(cfg.backbone_ckpt,frozen=cfg.frozen_backbone)
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -155,8 +156,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_baseline.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12346 main4multi_patch_baseline.py \
     configs/dataset/cdetector_dataset.py \
-    configs/train_strategy.py \
-    --record_save_dir log/cdetector_baseline
+    configs/baseline.py \
+    --record_save_dir log/cdetector_baseline_c6
 '''

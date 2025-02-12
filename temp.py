@@ -16,3 +16,13 @@ plt.ylabel('True Positive Rate')
 plt.title('Receiver Operating Characteristic')
 plt.legend(loc="lower right")
 plt.savefig('temp.png')
+
+
+import torch, torchvision
+import torch.nn as nn
+from cerwsi.nets.CHIEF import CHIEF
+
+
+model = CHIEF(size_arg="small", dropout=True, n_classes=2)
+
+model.eval()

@@ -8,7 +8,7 @@ import torch.distributed as dist
 import argparse
 from mmengine.config import Config
 from cerwsi.nets import MultiPatchUNI
-from cerwsi.utils import MyMultiTokenMetric
+from cerwsi.utils import MyMultiTokenMetric,BinaryMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
 POSITIVE_THR = 0.5
@@ -69,7 +69,8 @@ def train_net(cfg, model, model_without_ddp):
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
     # evaluator = build_evaluator(cfg.val_evaluator)
-    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([BinaryMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
@@ -85,6 +86,8 @@ def train_net(cfg, model, model_without_ddp):
         
         # avg_loss = torch.zeros(1, device=device)
         for idx, data_batch in enumerate(pbar):
+            # if idx > 10:
+            #     break
             loss = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
             # avg_loss = (avg_loss * idx + loss.detach()) / (idx + 1)
@@ -113,7 +116,7 @@ def train_net(cfg, model, model_without_ddp):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
-                prime_metric = 'multi-label/img_accuracy'
+                prime_metric = 'AUC'
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
@@ -157,5 +160,5 @@ if __name__ == '__main__':
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_uni.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/debug
+    --record_save_dir log/cdetector_ours
 '''

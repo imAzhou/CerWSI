@@ -101,17 +101,12 @@ class MultiPatchUNI(nn.Module):
         # img_logits: (bs, 1)
         # feature_emb.shape: (bs,cls_token+img_token, C)
         feature_emb,shallow_emb = self.forward_features(input_x.to(self.device))
-        pred_logits = self.classifier.calc_logits(feature_emb)
-        loss = self.classifier.calc_loss(pred_logits, databatch)
+        loss = self.classifier.calc_loss(feature_emb, databatch)
         optim_wrapper.update_params(loss)
         return loss
 
     def val_step(self, databatch):
         input_x = databatch['images']
         feature_emb,shallow_emb = self.forward_features(input_x.to(self.device))
-        pred_logits = self.classifier.calc_logits(feature_emb)
-        img_neg_logits,img_pos_logits,token_logits = pred_logits
-
-        databatch['img_probs'] = torch.sigmoid(img_neg_logits).squeeze(-1)   # (bs, )
-        databatch['pos_probs'] = torch.sigmoid(img_pos_logits)  # (bs, num_classes-1)
+        databatch = self.classifier.set_pred(feature_emb, databatch)
         return databatch

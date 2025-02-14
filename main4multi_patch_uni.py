@@ -116,7 +116,7 @@ def train_net(cfg, model, model_without_ddp):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
-                prime_metric = 'AUC'
+                prime_metric = 'img_accuracy'
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')

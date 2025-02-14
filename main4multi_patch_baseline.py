@@ -156,7 +156,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=6,7 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_baseline.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_baseline.py \
     configs/dataset/multi_patch_uni_dataset.py \
     configs/baseline.py \
     --record_save_dir log/multi_patch_baseline_c6

@@ -88,8 +88,8 @@ class CHIEF(nn.Module):
         self.text_to_vision=nn.Sequential(nn.Linear(768, size[1]), nn.ReLU(), nn.Dropout(p=0.25))
 
         self.register_buffer('organ_embedding', torch.randn(19, 768))
-        word_embedding = torch.load(r'./model_weight/Text_emdding.pth')
-        self.organ_embedding.data = word_embedding.float()
+        # word_embedding = torch.load(r'./model_weight/Text_emdding.pth')
+        # self.organ_embedding.data = word_embedding.float()
         self.text_to_vision=nn.Sequential(nn.Linear(768, size[1]), nn.ReLU(), nn.Dropout(p=0.25))
 
     def relocate(self):
@@ -100,16 +100,17 @@ class CHIEF(nn.Module):
 
     def forward(self, h, x_anatomic):
         batch = x_anatomic
-        h_ori = h
+        h_ori = h   # (num_tokens, embed_dim)
+        # A: (num_tokens, 1), h: (num_tokens, c=512)
         A, h = self.attention_net(h)
-        A = torch.transpose(A, 1, 0)
+        A = torch.transpose(A, 1, 0)    # A: (1, num_tokens)
         A_raw = A
         A = F.softmax(A, dim=1)
 
         embed_batch = self.organ_embedding[batch]
         embed_batch=self.text_to_vision(embed_batch)
-        WSI_feature = torch.mm(A, h)
-        slide_embeddings = torch.mm(A, h_ori)
+        WSI_feature = torch.mm(A, h)    # WSI_feature: (1, c=512)
+        slide_embeddings = torch.mm(A, h_ori)    # slide_embeddings: (1, embed_dim)
 
         M = WSI_feature+embed_batch
 

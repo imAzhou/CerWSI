@@ -8,7 +8,7 @@ import torch.distributed as dist
 import argparse
 from mmengine.config import Config
 from cerwsi.nets import MultiPatchUNI
-from cerwsi.utils import MyMultiTokenMetric,BinaryMetric
+from cerwsi.utils import MyMultiTokenMetric,BinaryMetric,MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
 POSITIVE_THR = 0.5
@@ -70,7 +70,8 @@ def train_net(cfg, model, model_without_ddp):
     
     # evaluator = build_evaluator(cfg.val_evaluator)
     # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
-    evaluator = build_evaluator([BinaryMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([BinaryMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
@@ -116,7 +117,7 @@ def train_net(cfg, model, model_without_ddp):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
-                prime_metric = 'img_accuracy'
+                prime_metric = 'multi-label/img_accuracy'
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
@@ -157,8 +158,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=6,7 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_uni.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12346 main4multi_patch_uni.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/cdetector_binary
+    --record_save_dir log/cdetector_query2label
 '''

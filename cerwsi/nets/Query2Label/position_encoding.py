@@ -57,16 +57,8 @@ class PositionEmbeddingSine(nn.Module):
 
 def build_position_encoding(args):
     N_steps = args.hidden_dim // 2
-
-    if args.backbone in ['CvT_w24'] :
-        downsample_ratio = 16
-    else:
-        downsample_ratio = 32
-
     if args.position_embedding in ('v2', 'sine'):
-        # TODO find a better way of exposing other arguments
-        assert args.img_size % 32 == 0, "args.img_size ({}) % 32 != 0".format(args.img_size)
-        position_embedding = PositionEmbeddingSine(N_steps, normalize=True, maxH=args.img_size // downsample_ratio, maxW=args.img_size // downsample_ratio)
+        position_embedding = PositionEmbeddingSine(N_steps, normalize=True, maxH=args.feat_size, maxW=args.feat_size)
         # import ipdb; ipdb.set_trace()
     else:
         raise ValueError(f"not supported {args.position_embedding}")

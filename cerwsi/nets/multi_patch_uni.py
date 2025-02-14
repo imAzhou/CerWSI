@@ -26,12 +26,11 @@ class MultiPatchUNI(nn.Module):
             self.temperature = temperature
         
         self.embed_dim = self.backbone.embed_dim
-        self.cls_token = nn.Parameter(torch.zeros(1, num_classes, self.embed_dim))
         num_patches = self.backbone.patch_embed.num_patches
-        embed_len = num_patches + num_classes
-        self.pos_embed = nn.Parameter(torch.randn(1, embed_len, self.embed_dim) * .02)
-        
         self.classifier = CerMClassifier(num_classes,num_patches,self.embed_dim)
+
+        # embed_len = num_patches + num_classes
+        # self.pos_embed = nn.Parameter(torch.randn(1, embed_len, self.embed_dim) * .02)
 
     @property
     def device(self):
@@ -82,13 +81,13 @@ class MultiPatchUNI(nn.Module):
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone.patch_embed(x)
-        # embed_x = self.backbone._pos_embed(x)
-        embed_x = self._pos_embed(x)
+        embed_x = self.backbone._pos_embed(x)
+        # embed_x = self._pos_embed(x)
         x = self.backbone.patch_drop(embed_x)
         x = self.backbone.norm_pre(x)
         x = self.backbone.blocks(x)
         x = self.backbone.norm(x)
-        return x,embed_x
+        return x, embed_x
     
     def forward(self, data_batch, mode, optim_wrapper=None):        
         if mode == 'train':
@@ -96,7 +95,7 @@ class MultiPatchUNI(nn.Module):
         if mode == 'val':
             return self.val_step(data_batch)
     
-    def train_step(self, databatch, optim_wrapper:OptimWrapper):
+    def train_step(self, databatch, optim_wrapper: OptimWrapper):
         input_x = databatch['images']   # (bs, c, h, w)
         # img_logits: (bs, 1)
         # feature_emb.shape: (bs,cls_token+img_token, C)

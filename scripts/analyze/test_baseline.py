@@ -27,8 +27,7 @@ category_colors = {cat: tuple(map(int, color)) for cat, color in zip(POSITIVE_CL
 
 parser = argparse.ArgumentParser()
 # base args
-parser.add_argument('dataset_config_file', type=str)
-parser.add_argument('strategy_config_file', type=str)
+parser.add_argument('config_file', type=str)
 parser.add_argument('ckpt', type=str)
 parser.add_argument('save_dir', type=str)
 parser.add_argument('--seed', type=int, default=1234, help='random seed')
@@ -107,15 +106,11 @@ def test_net(cfg, model):
     for idx, data_batch in enumerate(pbar):
         with torch.no_grad():
             outputs = model(data_batch, 'val')
-            
-        for bidx in range(cfg.val_bs):
-            pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
+        evaluator.process(data_samples=[outputs], data_batch=None)
+        for bidx in range(len(outputs['pos_probs'])):
             pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
-            if pred_label == 0:
-                pred_multi_label = [0]
-            else:
-                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
-            
+            pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
+            pred_label = 1 if sum(pos_pred) > 0 else 0
             pos_gt = [0]
             if len(outputs['token_labels'][bidx]) > 0:
                 pos_gt = list(set([tk[-1] for tk in outputs['token_labels'][bidx]]))
@@ -123,16 +118,16 @@ def test_net(cfg, model):
                 img_path = outputs['image_paths'][bidx],
                 gt_label = outputs['image_labels'][bidx].item(),
                 pred_label = pred_label,
-                pred_score = outputs['img_probs'][bidx].item(),
                 token_labels = outputs['token_labels'][bidx],
                 pos_gt = pos_gt,
                 pos_pred = pred_multi_label
             )
             predict_rsults.append(result)
-        
+    metrics = evaluator.evaluate(len(valloader.dataset))
     results = collect_results(predict_rsults, len(valloader.dataset))
     if is_main_process():
         pbar.close()
+        print(metrics)
         pred_results_dict = {'results':results}
         json_path = f'{args.save_dir}/pred_results_{POSITIVE_THR}.json'
         with open(json_path, 'w') as f:
@@ -154,7 +149,7 @@ def analyze(json_path):
         if imgitem['gt_label'] == 1 and imgitem['pred_label'] == 0:
             # os.makedirs(f'{args.save_dir}/FN',exist_ok=True)
             # draw_pred(imgitem)
-            tks = [tk-1 for tk in imgitem['gtmap_14']]
+            tks = [tk[-1]-1 for tk in imgitem['token_labels']]
             for i in range(len(error_pos_cls)):
                 if i in tks:
                     error_pos_cls[i] += 1
@@ -178,40 +173,36 @@ def main():
     init_distributed_mode(args)
     set_seed(args.seed)
     device = torch.device(f'cuda:{os.getenv("LOCAL_RANK")}')
-
-    d_cfg = Config.fromfile(args.dataset_config_file)
-    s_cfg = Config.fromfile(args.strategy_config_file)
-
-    cfg = Config()
-    for sub_cfg in [d_cfg, s_cfg]:
-        cfg.merge_from_dict(sub_cfg.to_dict())
+    cfg = Config.fromfile(args.config_file)
     
     if cfg.baseline_backbone == 'resnet50':
-        model = MultiResNet(num_classes = d_cfg['num_classes']).to(device)
+        model = MultiResNet(num_classes = cfg['num_classes']).to(device)
     elif cfg.baseline_backbone in ['vit', 'dinov2']:
-        model = MultiVit(num_classes = d_cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
+        model = MultiVit(num_classes = cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
     elif cfg.baseline_backbone == 'uni':
-        model = MultiUNI(num_classes = d_cfg['num_classes']).to(device)
+        model = MultiUNI(num_classes = cfg['num_classes']).to(device)
     model_without_ddp = model
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone(cfg.backbone_ckpt,frozen=cfg.frozen_backbone)
+    state_dict = torch.load(args.ckpt, map_location=device)
+    print(model_without_ddp.load_state_dict(state_dict))
     test_net(cfg, model)
 
     if args.distributed:
         dist.destroy_process_group()
 
 if __name__ == '__main__':
-    # main()
-    analyze(f'{args.save_dir}/pred_results_0.5.json')
+    main()
+    # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 scripts/analyze/test_baseline.py \
-    configs/dataset/multi_patch_uni_dataset.py \
-    configs/train_strategy.py \
-    log/multi_patch_uni/2025_01_30_07_13_02/checkpoints/best.pth \
-    log/multi_patch_uni/2025_01_30_07_13_02
+    log/dinov2_e50/config.py \
+    log/dinov2_e50/checkpoints/best.pth \
+    log/dinov2_e50
+
+记录模型预测的中间结果（每一张patch的预测 logits 值 + kfb 地址，方便后面分析）
 '''

@@ -33,6 +33,8 @@ def analyze():
         total_gt_img_label.append(img2gt[filename]['image_label'])
         
         pred_mlabel = imgpred['pred_instances']['labels']
+        pred_scores = imgpred['pred_instances']['scores']
+        pred_mlabel = pred_mlabel[pred_scores>0.5]
         pred_mlabel = [i+1 for i in pred_mlabel]    # 目标检测模型预测的类别 id 从 0 开始，与多标签分类模型的类别 id 对齐需要加 1
         pred_image_label = 1
         if len(pred_mlabel) == 0:
@@ -64,8 +66,8 @@ def analyze():
     print(result_table)
 
 if __name__ == '__main__':
-    pkl_root_dir = '/c22073/zly/codes/mmdetection/work_dirs'
-    pkl_path = f'{pkl_root_dir}/faster_rcnn_r50/pred_result.pkl'
+    pkl_root_dir = '/c22073/zly/codes/mmyolo/work_dirs/yolov8_s'
+    pkl_path = f'{pkl_root_dir}/pred_result.pkl'
     json_root_dir = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset'
     val_json_path = f'{json_root_dir}/annofiles/val_patches.json'
 

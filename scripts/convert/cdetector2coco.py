@@ -180,7 +180,7 @@ def visual_sample():
         annIds = coco.getAnnIds(imgIds=imgId)
         anns = coco.loadAnns(annIds)
         
-        # case:1 图像中的标注框只有一个且面积小于100*100的
+        # case:1 图像中的标注框只有一个且面积小于 64*64 的
         if len(anns) == 1 and len(filtered_imgIds[0])<5:
             bbox = anns[0]['bbox']
             area = bbox[2] * bbox[3]  # 宽 * 高
@@ -195,7 +195,7 @@ def visual_sample():
             if len(unique_categories) > 2:
                 filtered_imgIds[1].append(imgId)
 
-        # case:3 图像中的标注框同时存在一个面积小于100*100的和一个面积大于200*200的
+        # case:3 图像中的标注框同时存在一个面积小于64*64的和一个面积大于200*200的
         if len(filtered_imgIds[2])<5:
             has_small,has_large = False,False
             for ann in anns:

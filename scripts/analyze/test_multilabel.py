@@ -8,7 +8,8 @@ import torch.distributed as dist
 from mmengine.dist import collect_results
 import argparse
 from mmengine.config import Config
-from cerwsi.nets import MultiPatchUNI
+# from cerwsi.nets import MultiPatchUNI
+from cerwsi.nets import CerMCNet
 from cerwsi.utils import MyMultiTokenMetric
 from cerwsi.utils import set_seed, init_distributed_mode, build_evaluator,is_main_process
 import json
@@ -20,7 +21,7 @@ from prettytable import PrettyTable
 from cerwsi.utils import calculate_metrics,print_confusion_matrix,draw_OD
 
 POSITIVE_THR = 0.5
-POSITIVE_CLASS = ['ASC-US_LSIL', 'ASC-H_HSIL', 'AGC']
+POSITIVE_CLASS = ['ASC-US','LSIL', 'ASC-H', 'HSIL', 'AGC']
 colors = plt.cm.tab10(np.linspace(0, 1, len(POSITIVE_CLASS)))[:, :3] * 255
 category_colors = {cat: tuple(map(int, color)) for cat, color in zip(POSITIVE_CLASS, colors)}
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -60,9 +61,8 @@ def load_data(cfg):
         # 拆分 batch 中的图像和标签
         images = [item[0] for item in batch]  # 所有 image_tensor，假设 shape 一致
         image_labels = [item[1] for item in batch]
-        image_paths = [item[4] for item in batch]
+        image_paths = [item[3] for item in batch]
         token_labels = [item[2] for item in batch]
-        gtmap_14 = [item[3] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
@@ -73,8 +73,7 @@ def load_data(cfg):
             'images': images_tensor,
             'image_labels': imglabels_tensor,
             'token_labels': token_labels,  # 保持 label 的原始列表形式
-            'image_paths': image_paths,
-            'gtmap_14': gtmap_14
+            'image_paths': image_paths
         }
 
     train_dataset = TokenClsDataset(cfg.data_root, 'train')
@@ -109,8 +108,9 @@ def test_net(cfg, model):
     for idx, data_batch in enumerate(pbar):
         with torch.no_grad():
             outputs = model(data_batch, 'val')
-            
-        for bidx in range(cfg.val_bs):
+        
+        evaluator.process(data_samples=[outputs], data_batch=None)
+        for bidx in range(len(outputs['img_probs'])):
             pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
             pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
             if pred_label == 0:
@@ -128,14 +128,15 @@ def test_net(cfg, model):
                 pred_score = outputs['img_probs'][bidx].item(),
                 token_labels = outputs['token_labels'][bidx],
                 pos_gt = pos_gt,
-                pos_pred = pred_multi_label,
-                gtmap_14 = list(set([tk[-1] for tk in outputs['gtmap_14'][bidx]]))
+                pos_pred = pred_multi_label
             )
             predict_rsults.append(result)
-        
+    
+    metrics = evaluator.evaluate(len(valloader.dataset))   
     results = collect_results(predict_rsults, len(valloader.dataset))
     if is_main_process():
         pbar.close()
+        print(metrics)
         pred_results_dict = {'results':results}
         json_path = f'{args.save_dir}/pred_results_{POSITIVE_THR}.json'
         with open(json_path, 'w') as f:
@@ -148,8 +149,7 @@ def analyze(json_path):
     
     y_true,y_pred = [],[]
     conflict_pred = 0
-    error_clsname = ['ASC-US','LSIL', 'ASC-H','HSIL', 'AGC']
-    error_pos_cls = [0]*len(error_clsname)
+    error_pos_cls = [0]*len(POSITIVE_CLASS)
     for imgitem in tqdm(pred_results['results']):
         y_true.append(imgitem['gt_label'])
         y_pred.append(imgitem['pred_label'])
@@ -158,12 +158,12 @@ def analyze(json_path):
         if imgitem['gt_label'] == 1 and imgitem['pred_label'] == 0:
             # os.makedirs(f'{args.save_dir}/FN',exist_ok=True)
             # draw_pred(imgitem)
-            tks = [tk-1 for tk in imgitem['gtmap_14']]
+            tks = [tk[-1]-1 for tk in imgitem['token_labels']]
             for i in range(len(error_pos_cls)):
                 if i in tks:
                     error_pos_cls[i] += 1
     error_cls_table = PrettyTable()
-    error_cls_table.field_names = error_clsname
+    error_cls_table.field_names = POSITIVE_CLASS
     error_cls_table.add_row(error_pos_cls)
     print(error_cls_table)
 
@@ -190,14 +190,18 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = MultiPatchUNI(num_classes = d_cfg['num_classes']).to(device)
+    model = CerMCNet(
+        num_classes = d_cfg['num_classes'], 
+        backbone_type = cfg.backbone_type,
+        use_lora=cfg.use_lora
+    ).to(device)
     model_without_ddp = model
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_ckpt_with_LoRA(args.ckpt)
+    model_without_ddp.load_ckpt(args.ckpt)
     test_net(cfg, model)
 
     if args.distributed:
@@ -209,10 +213,10 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 scripts/analyze/test_multilabel.py \
-    configs/dataset/multi_patch_uni_dataset.py \
+    configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    log/multi_patch_uni/2025_01_30_07_13_02/checkpoints/best.pth \
-    log/multi_patch_uni/2025_01_30_07_13_02
+    log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
+    log/cdetector_ours/2025_02_16_16_29_38
 
     
 +--------+------+-------+------+-----+

@@ -8,9 +8,14 @@ warmup_epoch = 5
 gamma = 0.9
 save_each_epoch = False
 frozen_backbone = True
-use_lora = False
-temperature = 0.1  # 较低值会导致对比损失中的相似度差异更为明显，从而加速模型的收敛，但也可能导致梯度爆炸
-
+use_lora = True
+backbone_type = 'dinov2'
+backbone_ckpt_config = {
+    'vit': 'checkpoints/vit-large-p16_in21k-pre-3rdparty_ft-64xb64_in1k-384_20210928-b20ba619.pth',
+    'dinov2': 'checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth',
+    'uni': 'checkpoints/uni.bin',
+}
+backbone_ckpt = backbone_ckpt_config[backbone_type]
 optim_wrapper = dict(
     optimizer=dict(type='AdamW', lr=lr, weight_decay=weight_decay)
 )

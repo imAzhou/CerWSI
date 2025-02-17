@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import argparse
 from mmengine.config import Config
-from cerwsi.nets import MultiPatchUNI
+from cerwsi.nets import CerMCNet
 from cerwsi.utils import MyMultiTokenMetric,BinaryMetric,MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
@@ -68,10 +68,7 @@ def train_net(cfg, model, model_without_ddp):
     trainloader,valloader = load_data(cfg)
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
-    # evaluator = build_evaluator(cfg.val_evaluator)
-    # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
-    # evaluator = build_evaluator([BinaryMetric(thr=POSITIVE_THR)])
-    evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
@@ -135,10 +132,10 @@ def main():
     for sub_cfg in [d_cfg, s_cfg]:
         cfg.merge_from_dict(sub_cfg.to_dict())
     
-    model = MultiPatchUNI(
+    model = CerMCNet(
         num_classes = d_cfg['num_classes'], 
         use_lora=cfg.use_lora,
-        temperature=cfg.temperature
+        backbone_type = cfg.backbone_type,
     ).to(device)
     model_without_ddp = model
 
@@ -146,9 +143,7 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone('checkpoints/uni.bin', frozen=cfg.frozen_backbone)
-    # ckpt = 'log/multi_patch_uni/2025_01_27_08_31_25/checkpoints/best.pth'
-    # print(model_without_ddp.load_ckpt(ckpt))
+    model_without_ddp.load_backbone(cfg.backbone_ckpt, frozen=cfg.frozen_backbone)
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -158,8 +153,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12340 main4multi_patch_uni.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4CerMCNet.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/cdetector_ours
+    --record_save_dir log/debug
 '''

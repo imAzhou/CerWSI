@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
-from timm import create_model
 from timm.layers import resample_abs_pos_embed
 from peft import LoraConfig, get_peft_model
 from mmengine.optim import OptimWrapper
 from .classifier import CerMClassifier
+from timm import create_model
 
 class MultiPatchUNI(nn.Module):
-    def __init__(self, num_classes, use_lora, temperature):
+    def __init__(self, num_classes, use_lora):
         super(MultiPatchUNI, self).__init__()
 
         self.backbone = create_model(
@@ -23,9 +23,8 @@ class MultiPatchUNI(nn.Module):
                 lora_dropout=0.1,  # Dropout 概率
                 bias="none",  # 是否调整偏置
             )
-            self.temperature = temperature
-        
-        self.embed_dim = self.backbone.embed_dim
+                      
+        self.embed_dim = self.backbone.embed_dim    # =1024
         num_patches = self.backbone.patch_embed.num_patches
         self.classifier = CerMClassifier(num_classes,num_patches,self.embed_dim)
 

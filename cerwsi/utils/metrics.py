@@ -122,22 +122,25 @@ class MyMultiTokenMetric(MultiLabelMetric):
         bs_img_gt = data_samples['image_labels']
         bs_img_pred = (data_samples['img_probs'] > thr).int()
         bs = bs_img_gt.shape[0]
-
-        bs_pos_pred = (data_samples['pos_probs'] > thr).int()   # bs, num_cls-1
-        
-        # feat_gt = data_samples['feat_gt']   # bs, num_tokens
-        # csl_feat_pred = torch.argmax(data_samples['feat_probs'], dim=-1)   # bs, num_tokens
-
         self.num_classes = data_samples['pos_probs'].shape[-1] + 1
-
         for bidx in range(bs):
             gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
             if len(gt_multi_label) == 0:
                 gt_multi_label = [0]
-            if bs_img_pred[bidx] == 0:
-                pred_multi_label = [0]
+            
+            confidence_pred = (data_samples['pos_probs'][bidx] > thr).int()
+            if sum(confidence_pred) > 0 or bs_img_pred[bidx] == 1:
+                bs_img_pred[bidx] = 1
+                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(confidence_pred) if pred == 1]
             else:
-                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+                bs_img_pred[bidx] = 0
+                pred_multi_label = [0]
+            
+            # if bs_img_pred[bidx] == 0:
+            #     pred_multi_label = [0]
+            # else:
+            #     pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+            
             # feat_gt = cls_feat_gt[bidx,:]
             # feat_pred = csl_feat_pred[bidx,:]
             # gt_multi_label = torch.unique(feat_gt, dim=-1)

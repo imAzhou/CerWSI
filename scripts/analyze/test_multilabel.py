@@ -28,8 +28,7 @@ category_colors = {cat: tuple(map(int, color)) for cat, color in zip(POSITIVE_CL
 
 parser = argparse.ArgumentParser()
 # base args
-parser.add_argument('dataset_config_file', type=str)
-parser.add_argument('strategy_config_file', type=str)
+parser.add_argument('config_file', type=str)
 parser.add_argument('ckpt', type=str)
 parser.add_argument('save_dir', type=str)
 parser.add_argument('--seed', type=int, default=1234, help='random seed')
@@ -183,15 +182,10 @@ def main():
     set_seed(args.seed)
     device = torch.device(f'cuda:{os.getenv("LOCAL_RANK")}')
 
-    d_cfg = Config.fromfile(args.dataset_config_file)
-    s_cfg = Config.fromfile(args.strategy_config_file)
-
-    cfg = Config()
-    for sub_cfg in [d_cfg, s_cfg]:
-        cfg.merge_from_dict(sub_cfg.to_dict())
+    cfg = Config.fromfile(args.config_file)
     
     model = CerMCNet(
-        num_classes = d_cfg['num_classes'], 
+        num_classes = cfg['num_classes'], 
         backbone_type = cfg.backbone_type,
         use_lora=cfg.use_lora
     ).to(device)
@@ -208,13 +202,12 @@ def main():
         dist.destroy_process_group()
 
 if __name__ == '__main__':
-    # main()
-    analyze(f'{args.save_dir}/pred_results_0.5.json')
+    main()
+    # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 scripts/analyze/test_multilabel.py \
-    configs/dataset/cdetector_dataset.py \
-    configs/train_strategy.py \
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12345 scripts/analyze/test_multilabel.py \
+    log/cdetector_ours/2025_02_16_16_29_38/config.py \
     log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
     log/cdetector_ours/2025_02_16_16_29_38
 

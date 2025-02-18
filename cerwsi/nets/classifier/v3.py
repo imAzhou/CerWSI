@@ -176,7 +176,7 @@ class CerMClassifier(nn.Module):
         num_heads = 8
         mlp_dim = 2048
         use_self_attn = False
-        self.pos_add_type = None # 'sam','query2label',None
+        self.pos_add_type = 'sam' # 'sam','query2label',None
         self.use_attn_add = False
         
         self.proj_1 = nn.Sequential(
@@ -234,7 +234,7 @@ class CerMClassifier(nn.Module):
             )
         # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
         attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        # attn_map = F.softmax(attn_map, dim=-1)
+        attn_map = F.softmax(attn_map, dim=-1)
         keys_2 = self.proj_2(keys_1)  # (bs, num_tokens, C2=256)
 
         if self.use_attn_add:

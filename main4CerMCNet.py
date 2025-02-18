@@ -118,7 +118,8 @@ def train_net(cfg, model, model_without_ddp):
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
-
+        if is_main_process() and cfg.save_each_epoch:
+            torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
 
 def main():
     init_distributed_mode(args)
@@ -153,8 +154,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4CerMCNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4CerMCNet.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/debug
+    --record_save_dir log/cdetector_ours
 '''

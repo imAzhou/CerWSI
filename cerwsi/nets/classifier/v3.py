@@ -233,8 +233,8 @@ class CerMClassifier(nn.Module):
                 key_pe=key_pe,
             )
         # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        attn_map = F.softmax(attn_map, dim=-1)
+        attn_map_1 = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
+        attn_map = F.softmax(attn_map_1, dim=-1)
         keys_2 = self.proj_2(keys_1)  # (bs, num_tokens, C2=256)
 
         if self.use_attn_add:

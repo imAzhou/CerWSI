@@ -1,5 +1,6 @@
 import torch
 import os
+import time
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from cerwsi.datasets import TokenClsDataset
@@ -80,6 +81,7 @@ def train_net(cfg, model, model_without_ddp):
         current_lr = optimizer.param_groups[0]["lr"]
         pbar = trainloader
         if is_main_process():
+            start_time = time.time()
             pbar = tqdm(trainloader, ncols=80)
         
         # avg_loss = torch.zeros(1, device=device)
@@ -96,8 +98,14 @@ def train_net(cfg, model, model_without_ddp):
                 logger.info(f'Train Epoch [{epoch + 1}/{cfg.max_epochs}][{idx}/{len(trainloader)}], LR: {current_lr:.6f}, average loss: {loss.item():.6f}')
         if is_main_process():
             pbar.close()
-        lr_scheduler.step()
+            end_time = time.time()
+            during_time = end_time - start_time
+            eta_time = during_time * (cfg.max_epochs - epoch - 1)
+            m, s = divmod(eta_time, 60)
+            h, m = divmod(m, 60)
+            print('ETA: ' + "%02d:%02d:%02d" % (h, m, s))
         
+        lr_scheduler.step()
         if (epoch+1) % 10 == 0 or epoch == 0:
             model.eval()
             pbar = valloader
@@ -114,12 +122,12 @@ def train_net(cfg, model, model_without_ddp):
             if is_main_process():
                 pbar.close()
                 logger.info(metrics)
+                if cfg.save_each_epoch:
+                    torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
                 prime_metric = 'multi-label/img_accuracy'
                 if metrics[prime_metric] > max_acc:
                     max_acc = metrics[prime_metric]
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/best.pth')
-        if is_main_process() and cfg.save_each_epoch:
-            torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
 
 def main():
     init_distributed_mode(args)

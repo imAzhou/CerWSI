@@ -1,8 +1,9 @@
 import argparse
-from cerwsi.nets import MultiPatchUNI
+from cerwsi.nets import CerMCNet
 from cerwsi.utils import set_seed
 import torch
 import os
+import numpy as np
 from PIL import Image
 from torchvision import transforms
 from mmengine.config import Config
@@ -12,8 +13,7 @@ from scipy.ndimage import zoom
 
 parser = argparse.ArgumentParser()
 # base args
-parser.add_argument('dataset_config_file', type=str)
-parser.add_argument('strategy_config_file', type=str)
+parser.add_argument('config_file', type=str)
 parser.add_argument('ckpt', type=str)
 parser.add_argument('save_dir', type=str)
 parser.add_argument('--seed', type=int, default=1234, help='random seed')
@@ -27,12 +27,27 @@ def draw_heatmap(attn_map, image, pred_result, scale_factor, save_path):
     for i in range(attn_map.shape[0]):
         ax = axes[i // 3, i % 3]  # 计算对应的行和列
         ax.imshow(image, aspect='auto')  # 显示原图
-        expanded_map = zoom(attn_map[i], (scale_factor, scale_factor), order=0)  # 最近邻插值
-        ax.imshow(expanded_map, cmap='gray', alpha=0.5, vmin=0, vmax=1)  # 使用灰度图显示
+        # expanded_map = zoom(attn_map[i], (scale_factor, scale_factor), order=0)  # 最近邻插值
+        # ax.imshow(expanded_map, cmap='gray', alpha=0.5, vmin=0, vmax=1)  # 使用灰度图显示
+        expanded_map = zoom(attn_map[i], (scale_factor, scale_factor), order=1)  # 双线性插值
+        ax.imshow(expanded_map, cmap='hot', alpha=0.6)  # 使用热力图显示
         ax.axis('off')  # 关闭坐标轴
         ax.set_title(classnames[i] + f': {pred_result[i]}')  # 设置标题，可以自定义
     plt.tight_layout()
     plt.savefig(save_path, dpi=100)
+
+def drae_heatmap_1d(attn_map, save_path):
+    plt.figure(figsize=(6, 2))
+    expanded_map = zoom(attn_map, (10, 10), order=0)  # 最近邻插值
+    plt.imshow(expanded_map, cmap='gray', interpolation='nearest')
+    num_classes, num_tokens = attn_map.shape
+    # plt.grid(which='both', color='white', linestyle='-', linewidth=1)
+    # # 设置网格线的间隔
+    # plt.xticks(np.arange(0, num_tokens, 10))
+    # plt.yticks(np.arange(0, num_classes, 10))
+    plt.tight_layout()
+    plt.savefig(save_path)
+
 
 def visual_heatmap():
     transform = transforms.Compose([
@@ -55,32 +70,34 @@ def visual_heatmap():
             attn_map = outputs['attn_map'][0]   # (num_classes, num_tokens)
             img_pn = int(outputs['img_probs'].item() > 0.5)
             pos_pred = (outputs['pos_probs'][0] > 0.5).int().detach().tolist()
+            if sum(pos_pred) > 0:
+                img_pn = 1
             pred_result = [img_pn, *pos_pred]
 
             num_classes, num_tokens = attn_map.shape
-            feat_size = int(math.sqrt(num_tokens))
-            attn_map_2d = attn_map.reshape(num_classes, feat_size, feat_size)
-            scale_factor = image.size[0] // attn_map_2d.shape[-1]
-            attnmap_save_dir = f'{args.save_dir}/attn_visual/{sub_dirname}'
-            os.makedirs(attnmap_save_dir, exist_ok=True)
-            save_path = f'{attnmap_save_dir}/{img_filename}'
-            draw_heatmap(attn_map_2d.detach().cpu().numpy(), image, pred_result, scale_factor, save_path)
+            attnmap1d_save_dir = f'{args.save_dir}/attn1d_visual/{sub_dirname}'
+            os.makedirs(attnmap1d_save_dir, exist_ok=True)
+            save_path = f'{attnmap1d_save_dir}/{img_filename}'
+            drae_heatmap_1d(attn_map.detach().cpu().numpy(), save_path)
+            
+            # feat_size = int(math.sqrt(num_tokens))
+            # attn_map_2d = attn_map.reshape(num_classes, feat_size, feat_size)
+            # scale_factor = image.size[0] // attn_map_2d.shape[-1]
+            # attnmap_save_dir = f'{args.save_dir}/attn_visual_1/{sub_dirname}'
+            # os.makedirs(attnmap_save_dir, exist_ok=True)
+            # save_path = f'{attnmap_save_dir}/{img_filename}'
+            # draw_heatmap(attn_map_2d.detach().cpu().numpy(), image, pred_result, scale_factor, save_path)
 
 
 if __name__ == '__main__':
     set_seed(args.seed)
     device = torch.device(f'cuda:0')
-    d_cfg = Config.fromfile(args.dataset_config_file)
-    s_cfg = Config.fromfile(args.strategy_config_file)
-
-    cfg = Config()
-    for sub_cfg in [d_cfg, s_cfg]:
-        cfg.merge_from_dict(sub_cfg.to_dict())
+    cfg = Config.fromfile(args.config_file)
     
-    model = MultiPatchUNI(
-        num_classes = d_cfg['num_classes'], 
-        use_lora=cfg.use_lora,
-        temperature=cfg.temperature
+    model = CerMCNet(
+        num_classes = cfg['num_classes'], 
+        backbone_type = cfg.backbone_type,
+        use_lora=cfg.use_lora
     ).to(device)
     
     classnames = ['P/N', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
@@ -90,8 +107,7 @@ if __name__ == '__main__':
 
 '''
 python scripts/analyze/heatmap.py \
-    configs/dataset/cdetector_dataset.py \
-    configs/train_strategy.py \
+    log/cdetector_ours/2025_02_16_16_29_38/config.py \
     log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
     log/cdetector_ours/2025_02_16_16_29_38
 '''

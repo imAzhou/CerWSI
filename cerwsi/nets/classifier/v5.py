@@ -3,7 +3,6 @@ from torch import Tensor, nn
 import math
 import torch.nn.functional as F
 from typing import Tuple, Type
-# from cerwsi.nets.classifier.feat_pe import get_feat_pe
 from .feat_pe import get_feat_pe
 
 class MLPBlock(nn.Module):
@@ -102,7 +101,6 @@ class TwoWayAttentionBlock(nn.Module):
             k = keys
         attn_out = self.cross_attn_image_to_token(q=k, k=q, v=queries)
         keys = keys + attn_out
-        
         keys = self.norm4(keys)
         
         return queries, keys
@@ -166,7 +164,7 @@ class Attention(nn.Module):
 
 
 class CerMClassifier(nn.Module):
-    def __init__(self, num_classes, embed_dim):
+    def __init__(self, num_classes, num_patches, embed_dim):
         '''
         num_classes: positive classes number + 1
         '''
@@ -177,13 +175,14 @@ class CerMClassifier(nn.Module):
         mlp_dim = 2048
         use_self_attn = False
         self.pos_add_type = 'sam' # 'sam','query2label',None
-        self.use_attn_add = False
+        self.num_classes = num_classes
         
         self.proj_1 = nn.Sequential(
             nn.Linear(embed_dim, proj_dim_1),
             nn.ReLU(),
             # nn.Dropout(0.25)
         )
+        
         self.cls_tokens = nn.Embedding(num_classes, proj_dim_1)
         self.layers = nn.ModuleList()
         for i in range(depth):
@@ -198,13 +197,10 @@ class CerMClassifier(nn.Module):
                     use_self_attn = use_self_attn
                 )
             )
-        # proj_dim_2 = proj_dim_1//2
-        # self.proj_2 = nn.Sequential(
-        #     nn.Linear(proj_dim_1, proj_dim_2),
-        #     nn.Tanh()
-        # )
-        # self.fc = nn.Linear(proj_dim_2, 1)
-        self.fc = nn.Linear(proj_dim_1, 1)
+        self.cls_neg_head = nn.Linear(proj_dim_1, 1)
+        self.cls_pos_heads = nn.ModuleList()
+        for i in range(num_classes-1):
+            self.cls_pos_heads.append(nn.Linear(num_patches, 1))
         
     @property
     def device(self):
@@ -218,7 +214,8 @@ class CerMClassifier(nn.Module):
             img_logits: (bs, 1)
         '''
         keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
-        bs,num_tokens,embed_dim = keys_1.shape
+
+        bs, num_tokens, embed_dim = keys_1.shape
         feat_size = int(math.sqrt(num_tokens))
         queries = self.cls_tokens.weight.unsqueeze(0).expand(bs, -1, -1)
         key_pe = None
@@ -233,26 +230,25 @@ class CerMClassifier(nn.Module):
                 keys=keys_1,
                 key_pe=key_pe,
             )
-        out = self.fc(queries)   # (bs, n_cls, 1)
-        attn_map = None
+        # out = self.fc(queries)   # (bs, n_cls, 1)
+        # attn_map = None
 
         # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        # attn_map_1 = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        # attn_map = F.softmax(attn_map_1, dim=-1)
-        # keys_2 = self.proj_2(keys_1)  # (bs, num_tokens, C2=256)
+        cls_pn_token = queries[:,0,:]  # (bs, C)
+        pred_pn_logits = self.cls_neg_head(cls_pn_token)  # (bs, 1)
 
-        # if self.use_attn_add:
-        #     # 获取第0类的关注度并扩展维度 (bs, 1, num_tokens)
-        #     cls0 = attn_map[:, 0, :].unsqueeze(1)
-        #     # 对其他类别的关注度进行调整
-        #     adjusted_classes = cls0 + attn_map[:, 1:, :]
-        #     # 拼接第0类和调整后的类别
-        #     attn_map_new = torch.cat([cls0, adjusted_classes], dim=1)
-        #     cls_feature = torch.bmm(attn_map_new, keys_2)   # (bs, n_cls, C2)
-        # else:
-        #     cls_feature = torch.bmm(attn_map, keys_2)   # (bs, n_cls, C2)
-        # out = self.fc(cls_feature)   # (bs, n_cls, 1)
-        return out.squeeze(-1), attn_map
+        cls_pos_tokens = queries[:,1:self.num_classes,:]  # (bs, n_cls-1, C)
+        attn_map = torch.bmm(cls_pos_tokens, keys_1.transpose(1, 2))   # (bs, n_cls-1, num_tokens)
+        attn_map = F.softmax(attn_map, dim=-1)
+        # attn_map = (attn_map - attn_map.mean(-1, keepdim=True)) / (attn_map.std(-1, keepdim=True) + 1e-8)
+
+        pred_pos_logits = []
+        for i in range(self.num_classes-1):
+            pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i,:]))  # [(bs, 1),]
+        pred_pos_logits = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
+        out = torch.cat([pred_pn_logits, pred_pos_logits], dim=-1)   # (bs, n_cls)
+        
+        return out, attn_map
     
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()

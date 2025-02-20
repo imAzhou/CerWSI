@@ -9,7 +9,7 @@ class CerMCNet(nn.Module):
     def __init__(self, num_classes, backbone_type, use_lora):
         super(CerMCNet, self).__init__()
         assert backbone_type in ['vit', 'dinov2', 'uni']
-        self.backbone,self.embed_dim = get_backbone(backbone_type)
+        self.backbone,self.embed_dim,self.num_patches = get_backbone(backbone_type)
         self.backbone_type = backbone_type
         self.use_lora = use_lora
         self.num_classes = num_classes
@@ -21,7 +21,7 @@ class CerMCNet(nn.Module):
                 lora_dropout=0.1,  # Dropout 概率
                 bias="none",  # 是否调整偏置
             )
-        self.classifier = CerMClassifier(num_classes, self.embed_dim)
+        self.classifier = CerMClassifier(num_classes, self.num_patches, self.embed_dim)
 
 
     @property

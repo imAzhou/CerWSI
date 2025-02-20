@@ -3,7 +3,6 @@ from torch import Tensor, nn
 import math
 import torch.nn.functional as F
 from typing import Tuple, Type
-# from cerwsi.nets.classifier.feat_pe import get_feat_pe
 from .feat_pe import get_feat_pe
 
 class MLPBlock(nn.Module):
@@ -59,10 +58,10 @@ class TwoWayAttentionBlock(nn.Module):
         self.mlp = MLPBlock(embedding_dim, mlp_dim, activation)
         self.norm3 = nn.LayerNorm(embedding_dim)
 
-        self.norm4 = nn.LayerNorm(embedding_dim)
-        self.cross_attn_image_to_token = Attention(
-            embedding_dim, num_heads, downsample_rate=attention_downsample_rate
-        )
+        # self.norm4 = nn.LayerNorm(embedding_dim)
+        # self.cross_attn_image_to_token = Attention(
+        #     embedding_dim, num_heads, downsample_rate=attention_downsample_rate
+        # )
 
         self.skip_first_layer_pe = skip_first_layer_pe
 
@@ -95,15 +94,14 @@ class TwoWayAttentionBlock(nn.Module):
         queries = self.norm3(queries)
 
         # Cross attention block, image embedding attending to tokens
-        q = queries
-        if key_pe is not None:
-            k = keys + key_pe
-        else:
-            k = keys
-        attn_out = self.cross_attn_image_to_token(q=k, k=q, v=queries)
-        keys = keys + attn_out
-        
-        keys = self.norm4(keys)
+        # q = queries
+        # if key_pe is not None:
+        #     k = keys + key_pe
+        # else:
+        #     k = keys
+        # attn_out = self.cross_attn_image_to_token(q=k, k=q, v=queries)
+        # keys = keys + attn_out
+        # keys = self.norm4(keys)
         
         return queries, keys
 
@@ -177,11 +175,15 @@ class CerMClassifier(nn.Module):
         mlp_dim = 2048
         use_self_attn = False
         self.pos_add_type = 'sam' # 'sam','query2label',None
-        self.use_attn_add = False
         
         self.proj_1 = nn.Sequential(
             nn.Linear(embed_dim, proj_dim_1),
             nn.ReLU(),
+            # nn.Dropout(0.25)
+        )
+        self.proj_2 = nn.Sequential(
+            nn.Linear(embed_dim, proj_dim_1),
+            nn.Tanh(),
             # nn.Dropout(0.25)
         )
         self.cls_tokens = nn.Embedding(num_classes, proj_dim_1)
@@ -198,12 +200,6 @@ class CerMClassifier(nn.Module):
                     use_self_attn = use_self_attn
                 )
             )
-        # proj_dim_2 = proj_dim_1//2
-        # self.proj_2 = nn.Sequential(
-        #     nn.Linear(proj_dim_1, proj_dim_2),
-        #     nn.Tanh()
-        # )
-        # self.fc = nn.Linear(proj_dim_2, 1)
         self.fc = nn.Linear(proj_dim_1, 1)
         
     @property
@@ -218,6 +214,7 @@ class CerMClassifier(nn.Module):
             img_logits: (bs, 1)
         '''
         keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
+        keys_2 = self.proj_2(img_tokens)  # (bs, num_tokens, C1=512)
         bs,num_tokens,embed_dim = keys_1.shape
         feat_size = int(math.sqrt(num_tokens))
         queries = self.cls_tokens.weight.unsqueeze(0).expand(bs, -1, -1)
@@ -233,25 +230,15 @@ class CerMClassifier(nn.Module):
                 keys=keys_1,
                 key_pe=key_pe,
             )
-        out = self.fc(queries)   # (bs, n_cls, 1)
-        attn_map = None
+        # out = self.fc(queries)   # (bs, n_cls, 1)
+        # attn_map = None
 
         # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        # attn_map_1 = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        # attn_map = F.softmax(attn_map_1, dim=-1)
-        # keys_2 = self.proj_2(keys_1)  # (bs, num_tokens, C2=256)
+        attn_map_1 = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
+        attn_map = F.softmax(attn_map_1, dim=-1)
 
-        # if self.use_attn_add:
-        #     # 获取第0类的关注度并扩展维度 (bs, 1, num_tokens)
-        #     cls0 = attn_map[:, 0, :].unsqueeze(1)
-        #     # 对其他类别的关注度进行调整
-        #     adjusted_classes = cls0 + attn_map[:, 1:, :]
-        #     # 拼接第0类和调整后的类别
-        #     attn_map_new = torch.cat([cls0, adjusted_classes], dim=1)
-        #     cls_feature = torch.bmm(attn_map_new, keys_2)   # (bs, n_cls, C2)
-        # else:
-        #     cls_feature = torch.bmm(attn_map, keys_2)   # (bs, n_cls, C2)
-        # out = self.fc(cls_feature)   # (bs, n_cls, 1)
+        cls_feature = torch.bmm(attn_map, keys_2)   # (bs, n_cls, C1)
+        out = self.fc(cls_feature)   # (bs, n_cls, 1)
         return out.squeeze(-1), attn_map
     
     def calc_pos_loss(self, pos_logits, databatch):

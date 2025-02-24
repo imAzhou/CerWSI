@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import argparse
 from mmengine.config import Config
-from cerwsi.nets import MultiResNet,MultiVit,MultiUNI
+from cerwsi.nets import MultiResNet,MultiVit,MultiUNI,MultiConvNext
 from cerwsi.utils import MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
@@ -137,6 +137,8 @@ def main():
     
     if cfg.baseline_backbone == 'resnet50':
         model = MultiResNet(num_classes = d_cfg['num_classes']).to(device)
+    if cfg.baseline_backbone == 'convnext':
+        model = MultiConvNext(num_classes = d_cfg['num_classes']).to(device)
     elif cfg.baseline_backbone in ['vit', 'dinov2']:
         model = MultiVit(num_classes = d_cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
     elif cfg.baseline_backbone == 'uni':
@@ -156,7 +158,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=4,6,7 torchrun  --nproc_per_node=3 --master_port=12345 main4multi_patch_baseline.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12345 main4multi_patch_baseline.py \
     configs/dataset/multi_patch_uni_dataset.py \
     configs/baseline.py \
     --record_save_dir log/multi_patch_baseline_c6

@@ -69,7 +69,8 @@ def train_net(cfg, model, model_without_ddp):
     trainloader,valloader = load_data(cfg)
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
-    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
@@ -165,5 +166,5 @@ if __name__ == '__main__':
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4CerMCNet.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/cdetector_ours
+    --record_save_dir log/cdetector_ablation
 '''

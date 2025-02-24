@@ -9,12 +9,13 @@ gamma = 0.9
 save_each_epoch = False
 frozen_backbone = False
 
-baseline_backbone = 'dinov2'    # resnet50, vit, dinov2, uni
+baseline_backbone = 'convnext'    # resnet50, vit, dinov2, uni, convnext
 backbone_ckpt_config = {
     'resnet50': 'checkpoints/resnet50_a1_0-14fe96d1.pth',
     'vit': 'checkpoints/vit-large-p16_in21k-pre-3rdparty_ft-64xb64_in1k-384_20210928-b20ba619.pth',
     'dinov2': 'checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth',
     'uni': 'checkpoints/uni.bin',
+    'convnext': 'checkpoints/convnext-large_in21k-pre-3rdparty_64xb64_in1k_20220124-2412403d.pth'
 }
 backbone_ckpt = backbone_ckpt_config[baseline_backbone]
 optim_wrapper = dict(

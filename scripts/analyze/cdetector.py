@@ -126,19 +126,23 @@ def vis_sample_img():
             draw_OD(img_patch, save_path, [0,0,WINDOW_SIZE,WINDOW_SIZE], item_inside_patch, category_colors)
 
 def analyze_img_wh():
-    for mode in ['train', 'test']:
+    for mode in ['test']:
         image_dir = f'{root_dir}/{mode}'
        
         min_w,min_h = 10000,10000
+        all_w, all_h = [],[]
         for fidx, filename in enumerate(os.listdir(image_dir)):
             img = cv2.imread(f'{image_dir}/{filename}')
             h,w,_ = img.shape
-            
+            all_w.append(w)
+            all_h.append(h)
             if h<min_h:
                 min_h = h
             if w<min_w:
                 min_w = w
         print(f'{mode}: min w: {min_w}, min h: {min_h}')
+        mean_w,mean_h = np.mean(all_w),np.mean(all_h)
+        print(f'min w: {mean_w}, min h: {mean_h}')
         '''
         train: min w: 975, min h: 580
         test: min w: 975, min h: 580
@@ -198,7 +202,9 @@ def analyze_cls_dist():
 
 
 if __name__ == '__main__':
-    root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    # root_dir = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    # root_dir = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset'
+    root_dir = '/c22073/zly/datasets/CervicalDatasets/data_resource'
     # analyze_img_wh()
     # vis_sample_img()
     # analayze_img_nums()

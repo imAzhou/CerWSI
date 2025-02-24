@@ -10,7 +10,7 @@ import argparse
 from mmengine.config import Config
 # from cerwsi.nets import MultiPatchUNI
 from cerwsi.nets import CerMCNet
-from cerwsi.utils import MyMultiTokenMetric
+from cerwsi.utils import MyMultiTokenMetric,MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, build_evaluator,is_main_process
 import json
 from PIL import Image
@@ -97,6 +97,7 @@ def load_data(cfg):
 def test_net(cfg, model):
     trainloader,valloader = load_data(cfg)
     evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
 
     model.eval()
     pbar = valloader
@@ -206,10 +207,10 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12345 scripts/analyze/test_multilabel.py \
-    log/cdetector_ours/2025_02_16_16_29_38/config.py \
-    log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
-    log/cdetector_ours/2025_02_16_16_29_38
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12340 scripts/analyze/test_multilabel.py \
+    log/cdetector_ours/2025_02_20_23_12_21/config.py \
+    log/cdetector_ours/2025_02_20_23_12_21/checkpoints/best.pth \
+    log/cdetector_ours/2025_02_20_23_12_21
 
     
 +--------+------+-------+------+-----+

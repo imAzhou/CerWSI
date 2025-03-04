@@ -9,6 +9,7 @@ import torch.distributed as dist
 import argparse
 from mmengine.config import Config
 from cerwsi.nets import CerMCNet
+from torchvision import transforms
 from cerwsi.utils import MyMultiTokenMetric,BinaryMetric,MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
@@ -45,7 +46,14 @@ def load_data(cfg):
             'token_labels': token_labels  # 保持 label 的原始列表形式
         }
 
-    train_dataset = TokenClsDataset(cfg.data_root, 'train')
+    train_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+        transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    train_dataset = TokenClsDataset(cfg.data_root, 'train', train_transform)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -53,7 +61,12 @@ def load_data(cfg):
                             sampler = train_sampler,
                             collate_fn=custom_collate,
                             num_workers=8)
-    val_dataset = TokenClsDataset(cfg.data_root, 'val')
+    val_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    val_dataset = TokenClsDataset(cfg.data_root, 'val', val_transform)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,
@@ -69,8 +82,8 @@ def train_net(cfg, model, model_without_ddp):
     trainloader,valloader = load_data(cfg)
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
-    # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
-    evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
@@ -146,6 +159,7 @@ def main():
         num_classes = d_cfg['num_classes'], 
         use_lora=cfg.use_lora,
         backbone_type = cfg.backbone_type,
+        img_size = cfg.img_size
     ).to(device)
     model_without_ddp = model
 
@@ -166,5 +180,5 @@ if __name__ == '__main__':
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4CerMCNet.py \
     configs/dataset/cdetector_dataset.py \
     configs/train_strategy.py \
-    --record_save_dir log/cdetector_ablation
+    --record_save_dir log/cdetector_mini
 '''

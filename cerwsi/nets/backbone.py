@@ -32,7 +32,7 @@ def get_backbone(backbone_type, img_size=224):
 if __name__ == '__main__':
     import torch
 
-    backbone,embed_dim,num_patches = get_backbone('dinov2')
-    mockdata = torch.randn((1,3,224,224))
+    backbone,embed_dim,num_patches = get_backbone('dinov2',320)
+    mockdata = torch.randn((1,3,320,320))
     output = backbone(mockdata)
     print()

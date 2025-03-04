@@ -16,6 +16,7 @@ import json
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+from torchvision import transforms
 
 from prettytable import PrettyTable
 from cerwsi.utils import calculate_metrics,print_confusion_matrix,draw_OD
@@ -60,8 +61,8 @@ def load_data(cfg):
         # 拆分 batch 中的图像和标签
         images = [item[0] for item in batch]  # 所有 image_tensor，假设 shape 一致
         image_labels = [item[1] for item in batch]
-        image_paths = [item[3] for item in batch]
         token_labels = [item[2] for item in batch]
+        image_paths = [item[3] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
@@ -75,7 +76,14 @@ def load_data(cfg):
             'image_paths': image_paths
         }
 
-    train_dataset = TokenClsDataset(cfg.data_root, 'train')
+    train_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+        transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    train_dataset = TokenClsDataset(cfg.data_root, 'train', train_transform)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -83,7 +91,12 @@ def load_data(cfg):
                             sampler = train_sampler,
                             collate_fn=custom_collate,
                             num_workers=8)
-    val_dataset = TokenClsDataset(cfg.data_root, 'val')
+    val_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    val_dataset = TokenClsDataset(cfg.data_root, 'val', val_transform)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,
@@ -188,7 +201,8 @@ def main():
     model = CerMCNet(
         num_classes = cfg['num_classes'], 
         backbone_type = cfg.backbone_type,
-        use_lora=cfg.use_lora
+        use_lora=cfg.use_lora,
+        img_size = cfg.img_size
     ).to(device)
     model_without_ddp = model
 
@@ -208,9 +222,9 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12340 scripts/analyze/test_multilabel.py \
-    log/cdetector_ours/2025_02_20_23_12_21/config.py \
-    log/cdetector_ours/2025_02_20_23_12_21/checkpoints/best.pth \
-    log/cdetector_ours/2025_02_20_23_12_21
+    log/multi_patch_ours/2025_02_22_20_57_02/config.py \
+    log/multi_patch_ours/2025_02_22_20_57_02/checkpoints/best.pth \
+    log/multi_patch_ours/2025_02_22_20_57_02
 
     
 +--------+------+-------+------+-----+

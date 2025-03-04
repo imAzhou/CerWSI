@@ -104,6 +104,7 @@ if __name__ == '__main__':
         backbone_type = cfg.backbone_type,
         use_lora=cfg.use_lora
     ).to(device)
+    # model.load_ckpt(args.ckpt)
     
     classnames = ['P/N', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
     sample_img_dir = 'statistic_results/cdetector'

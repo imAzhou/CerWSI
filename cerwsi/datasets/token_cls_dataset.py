@@ -7,7 +7,7 @@ from torchvision import transforms
 
 # 自定义数据集类
 class TokenClsDataset(Dataset):
-    def __init__(self, root_dir, mode):
+    def __init__(self, root_dir, mode, transform):
         """
         Args:
             img_dir (str): img dir
@@ -19,11 +19,7 @@ class TokenClsDataset(Dataset):
         with open(f'{self.annofiles_dir}/{mode}_patches.json', 'r') as f:
             self.patch_infolist = json.load(f)
         
-        self.transform = transforms.Compose([
-            transforms.Resize(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ])
+        self.transform = transform
 
     def __len__(self):
         return len(self.patch_infolist)

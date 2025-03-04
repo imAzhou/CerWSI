@@ -6,10 +6,10 @@ from .classifier import CerMClassifier
 from .backbone import get_backbone
 
 class CerMCNet(nn.Module):
-    def __init__(self, num_classes, backbone_type, use_lora):
+    def __init__(self, num_classes, backbone_type, use_lora, img_size):
         super(CerMCNet, self).__init__()
         assert backbone_type in ['vit', 'dinov2', 'uni']
-        self.backbone,self.embed_dim,self.num_patches = get_backbone(backbone_type)
+        self.backbone,self.embed_dim,self.num_patches = get_backbone(backbone_type, img_size)
         self.backbone_type = backbone_type
         self.use_lora = use_lora
         self.num_classes = num_classes

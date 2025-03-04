@@ -7,3 +7,5 @@ classes = ['negative', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
 num_classes = len(classes)
 train_bs = 128
 val_bs = 128
+
+img_size = 224

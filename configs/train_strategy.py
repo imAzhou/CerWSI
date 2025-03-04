@@ -19,3 +19,5 @@ backbone_ckpt = backbone_ckpt_config[backbone_type]
 optim_wrapper = dict(
     optimizer=dict(type='AdamW', lr=lr, weight_decay=weight_decay)
 )
+
+img_size = 224

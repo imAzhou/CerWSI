@@ -6,6 +6,7 @@ from cerwsi.datasets import TokenClsDataset
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import argparse
+from torchvision import transforms
 from mmengine.config import Config
 from cerwsi.nets import MultiResNet,MultiVit,MultiUNI
 from cerwsi.utils import MultiPosMetric
@@ -44,7 +45,14 @@ def load_data(cfg):
             'token_labels': token_labels  # 保持 label 的原始列表形式
         }
 
-    train_dataset = TokenClsDataset(cfg.data_root, 'train')
+    train_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+        transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    train_dataset = TokenClsDataset(cfg.data_root, 'train', train_transform)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -52,7 +60,12 @@ def load_data(cfg):
                             sampler = train_sampler,
                             collate_fn=custom_collate,
                             num_workers=8)
-    val_dataset = TokenClsDataset(cfg.data_root, 'val')
+    val_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    val_dataset = TokenClsDataset(cfg.data_root, 'val', val_transform)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,
@@ -156,8 +169,8 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=4,6,7 torchrun  --nproc_per_node=3 --master_port=12345 main4multi_patch_baseline.py \
-    configs/dataset/multi_patch_uni_dataset.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12345 main4multi_patch_baseline.py \
+    configs/dataset/cdetector_dataset.py \
     configs/baseline.py \
-    --record_save_dir log/multi_patch_baseline_c6
+    --record_save_dir log/cdetector_mini
 '''

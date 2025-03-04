@@ -7,6 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 from mmengine.dist import collect_results
 import argparse
+from torchvision import transforms
 from mmengine.config import Config
 # from cerwsi.nets import MultiPatchUNI
 from cerwsi.nets import CerMCNet
@@ -75,7 +76,14 @@ def load_data(cfg):
             'image_paths': image_paths
         }
 
-    train_dataset = TokenClsDataset(cfg.data_root, 'train')
+    train_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+        transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    train_dataset = TokenClsDataset(cfg.data_root, 'train', train_transform)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -83,7 +91,12 @@ def load_data(cfg):
                             sampler = train_sampler,
                             collate_fn=custom_collate,
                             num_workers=8)
-    val_dataset = TokenClsDataset(cfg.data_root, 'val')
+    val_transform = transforms.Compose([
+        transforms.Resize(cfg.img_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    val_dataset = TokenClsDataset(cfg.data_root, 'val', val_transform)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,
@@ -187,7 +200,8 @@ def main():
     model = CerMCNet(
         num_classes = cfg['num_classes'], 
         backbone_type = cfg.backbone_type,
-        use_lora=cfg.use_lora
+        use_lora=cfg.use_lora,
+        img_size = cfg.img_size
     ).to(device)
     model_without_ddp = model
 
@@ -206,10 +220,10 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12345 scripts/analyze/test_multilabel.py \
-    log/cdetector_ours/2025_02_16_16_29_38/config.py \
-    log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
-    log/cdetector_ours/2025_02_16_16_29_38
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 scripts/analyze/test_multilabel.py \
+    log/cdetector_mini/ours/config.py \
+    log/cdetector_mini/ours/checkpoints/best.pth \
+    log/cdetector_mini/ours
 
     
 +--------+------+-------+------+-----+

@@ -180,7 +180,7 @@ class CerMClassifier(nn.Module):
         self.proj_1 = nn.Sequential(
             nn.Linear(embed_dim, proj_dim_1),
             nn.ReLU(),
-            # nn.Dropout(0.25)
+            nn.Dropout(0.25)
         )
         
         self.cls_tokens = nn.Embedding(num_classes, proj_dim_1)
@@ -197,7 +197,7 @@ class CerMClassifier(nn.Module):
                     use_self_attn = use_self_attn
                 )
             )
-        self.cls_neg_head = nn.Linear(proj_dim_1, 1)
+        self.cls_neg_head = nn.Linear(proj_dim_1 + num_classes, 1)
         self.cls_pos_heads = nn.ModuleList()
         for i in range(num_classes-1):
             self.cls_pos_heads.append(nn.Linear(num_patches, 1))
@@ -234,17 +234,18 @@ class CerMClassifier(nn.Module):
         # attn_map = None
 
         # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        cls_pn_token = queries[:,0,:]  # (bs, C)
-        pred_pn_logits = self.cls_neg_head(cls_pn_token)  # (bs, 1)
-
-        cls_pos_tokens = queries[:,1:self.num_classes,:]  # (bs, n_cls-1, C)
-        attn_map = torch.bmm(cls_pos_tokens, keys_1.transpose(1, 2))   # (bs, n_cls-1, num_tokens)
-        attn_map = F.softmax(attn_map, dim=-1)
+        attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
+        # attn_map = F.softmax(attn_map, dim=1)
         # attn_map = (attn_map - attn_map.mean(-1, keepdim=True)) / (attn_map.std(-1, keepdim=True) + 1e-8)
+        
+        avg_token = torch.mean(attn_map, dim=-1)
+        cls_pn_token = queries[:,0,:]  # (bs, C)
+        overall_neg_token = torch.cat([cls_pn_token, avg_token], dim=-1 )
+        pred_pn_logits = self.cls_neg_head(overall_neg_token)  # (bs, 1)
 
         pred_pos_logits = []
         for i in range(self.num_classes-1):
-            pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i,:]))  # [(bs, 1),]
+            pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i+1,:]))  # [(bs, 1),]
         pred_pos_logits = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
         out = torch.cat([pred_pn_logits, pred_pos_logits], dim=-1)   # (bs, n_cls)
         

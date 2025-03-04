@@ -183,7 +183,7 @@ class CerMClassifier(nn.Module):
             nn.Dropout(0.25)
         )
         
-        self.cls_tokens = nn.Embedding(num_classes, proj_dim_1)
+        self.cls_tokens = nn.Embedding(num_classes-1, proj_dim_1)
         self.layers = nn.ModuleList()
         for i in range(depth):
             self.layers.append(
@@ -197,10 +197,10 @@ class CerMClassifier(nn.Module):
                     use_self_attn = use_self_attn
                 )
             )
-        self.cls_neg_head = nn.Linear(proj_dim_1 + num_classes, 1)
-        self.cls_pos_heads = nn.ModuleList()
+            
+        self.cls_heads = nn.ModuleList()
         for i in range(num_classes-1):
-            self.cls_pos_heads.append(nn.Linear(num_patches, 1))
+            self.cls_heads.append(nn.Linear(proj_dim_1, 1))
         
     @property
     def device(self):
@@ -235,28 +235,12 @@ class CerMClassifier(nn.Module):
             # attn_score: (bs, num_cls, L)
             attn_score = torch.mean(attn_out_q, dim=1)
             attn_array.append(attn_score)
-        # out = self.fc(queries)   # (bs, n_cls, 1)
-        # attn_map = None
-
-        # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        # keys_1 = keys_1 + key_pe
-        attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        # attn_map = attn_map / math.sqrt(embed_dim)
-        attn_array.append(attn_map)
-        attn_array = torch.stack(attn_array, dim=1)
-        # attn_map = F.softmax(attn_map, dim=-1)
-        # attn_map = (attn_map - attn_map.mean(-1, keepdim=True)) / (attn_map.std(-1, keepdim=True) + 1e-8)
         
-        avg_token = torch.mean(attn_map, dim=-1)
-        cls_pn_token = queries[:,0,:]  # (bs, C)
-        overall_neg_token = torch.cat([cls_pn_token, avg_token], dim=-1 )
-        pred_pn_logits = self.cls_neg_head(overall_neg_token)  # (bs, 1)
-
         pred_pos_logits = []
         for i in range(self.num_classes-1):
-            pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i+1,:]))  # [(bs, 1),]
-        pred_pos_logits = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
-        out = torch.cat([pred_pn_logits, pred_pos_logits], dim=-1)   # (bs, n_cls)
+            pred_pos_logits.append(self.cls_heads[i](queries[:,i,:]))  # [(bs, 1),]
+        out = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
+        attn_array = None
         
         return out, attn_array
     
@@ -272,20 +256,15 @@ class CerMClassifier(nn.Module):
     
     def calc_loss(self,feature_emb, databatch):
         pred_logits,_ = self.calc_logits(feature_emb)
-        img_pn_logit = pred_logits[:, 0].unsqueeze(1)
-        positive_logits = pred_logits[:, 1:]
-        img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
-        pn_loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
+        positive_logits = pred_logits
         pos_loss = self.calc_pos_loss(positive_logits, databatch)
-        loss = pn_loss + pos_loss
+        loss = pos_loss
         return loss
 
     def set_pred(self,feature_emb, databatch):
         pred_logits,attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
-        img_pn_logit = pred_logits[:, 0]
-        positive_logits = pred_logits[:, 1:]
+        positive_logits = pred_logits
 
-        databatch['img_probs'] = torch.sigmoid(img_pn_logit).squeeze(-1)   # (bs, )
         databatch['pos_probs'] = torch.sigmoid(positive_logits) # (bs, num_classes-1)
         databatch['attn_array'] = attn_array # (bs, num_classes, num_tokens)
         return databatch

@@ -129,9 +129,10 @@ class MyMultiTokenMetric(MultiLabelMetric):
                 gt_multi_label = [0]
             
             confidence_pred = (data_samples['pos_probs'][bidx] > thr).int()
-            if sum(confidence_pred) > 0 or bs_img_pred[bidx] == 1:
+            # if sum(confidence_pred) > 0 or bs_img_pred[bidx] == 1:
+            if bs_img_pred[bidx] == 1:
                 bs_img_pred[bidx] = 1
-                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(confidence_pred) if pred == 1]
+                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate((data_samples['pos_probs'][bidx] > 0.3).int()) if pred == 1]
             else:
                 bs_img_pred[bidx] = 0
                 pred_multi_label = [0]

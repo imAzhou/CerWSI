@@ -82,8 +82,8 @@ def train_net(cfg, model, model_without_ddp):
     trainloader,valloader = load_data(cfg)
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
-    # evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
-    evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
+    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
     
     if is_main_process():
         logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')

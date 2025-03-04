@@ -35,6 +35,7 @@ def draw_heatmap(attn_map, image, pred_result, scale_factor, save_path):
         ax.set_title(classnames[i] + f': {pred_result[i]}')  # 设置标题，可以自定义
     plt.tight_layout()
     plt.savefig(save_path, dpi=100)
+    plt.close()
 
 def drae_heatmap_1d(attn_map, save_path):
     plt.figure(figsize=(6, 2))
@@ -47,6 +48,7 @@ def drae_heatmap_1d(attn_map, save_path):
     # plt.yticks(np.arange(0, num_classes, 10))
     plt.tight_layout()
     plt.savefig(save_path)
+    plt.close()
 
 
 def visual_heatmap():
@@ -67,26 +69,29 @@ def visual_heatmap():
 
             with torch.no_grad():
                 outputs = model(databatch, 'val')
-            attn_map = outputs['attn_map'][0]   # (num_classes, num_tokens)
+            attn_array = outputs['attn_array'][0]   # (3, num_classes, num_tokens)
             img_pn = int(outputs['img_probs'].item() > 0.5)
             pos_pred = (outputs['pos_probs'][0] > 0.5).int().detach().tolist()
             if sum(pos_pred) > 0:
                 img_pn = 1
             pred_result = [img_pn, *pos_pred]
 
-            num_classes, num_tokens = attn_map.shape
-            attnmap1d_save_dir = f'{args.save_dir}/attn1d_visual/{sub_dirname}'
-            os.makedirs(attnmap1d_save_dir, exist_ok=True)
-            save_path = f'{attnmap1d_save_dir}/{img_filename}'
-            drae_heatmap_1d(attn_map.detach().cpu().numpy(), save_path)
+            num_classes, num_tokens = attn_array[0].shape
+            # attnmap1d_save_dir = f'{args.save_dir}/attn1d_visual/{sub_dirname}'
+            # os.makedirs(attnmap1d_save_dir, exist_ok=True)
+            # save_path = f'{attnmap1d_save_dir}/{img_filename}'
+            # drae_heatmap_1d(attn_map.detach().cpu().numpy(), save_path)
             
-            # feat_size = int(math.sqrt(num_tokens))
-            # attn_map_2d = attn_map.reshape(num_classes, feat_size, feat_size)
-            # scale_factor = image.size[0] // attn_map_2d.shape[-1]
-            # attnmap_save_dir = f'{args.save_dir}/attn_visual_1/{sub_dirname}'
-            # os.makedirs(attnmap_save_dir, exist_ok=True)
-            # save_path = f'{attnmap_save_dir}/{img_filename}'
-            # draw_heatmap(attn_map_2d.detach().cpu().numpy(), image, pred_result, scale_factor, save_path)
+            feat_size = int(math.sqrt(num_tokens))
+            attnmap_save_dir = f'{args.save_dir}/attn_array_visual/{sub_dirname}'
+            os.makedirs(attnmap_save_dir, exist_ok=True)
+            for idx,attn_map in enumerate(attn_array):
+                # attn_map = torch.sigmoid(attn_map)
+                attn_map_2d = attn_map.reshape(num_classes, feat_size, feat_size)
+                scale_factor = image.size[0] // attn_map_2d.shape[-1]
+                purename = img_filename.split('.')[0]
+                save_path = f'{attnmap_save_dir}/{purename}_{idx}.png'
+                draw_heatmap(attn_map_2d.detach().cpu().numpy(), image, pred_result, scale_factor, save_path)
 
 
 if __name__ == '__main__':
@@ -99,6 +104,7 @@ if __name__ == '__main__':
         backbone_type = cfg.backbone_type,
         use_lora=cfg.use_lora
     ).to(device)
+    # model.load_ckpt(args.ckpt)
     
     classnames = ['P/N', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'AGC']
     sample_img_dir = 'statistic_results/cdetector'
@@ -107,7 +113,7 @@ if __name__ == '__main__':
 
 '''
 python scripts/analyze/heatmap.py \
-    log/cdetector_ours/2025_02_16_16_29_38/config.py \
-    log/cdetector_ours/2025_02_16_16_29_38/checkpoints/best.pth \
-    log/cdetector_ours/2025_02_16_16_29_38
+    log/cdetector_ours/2025_02_20_23_12_21/config.py \
+    log/cdetector_ours/2025_02_20_23_12_21/checkpoints/best.pth \
+    log/cdetector_ours/2025_02_20_23_12_21
 '''

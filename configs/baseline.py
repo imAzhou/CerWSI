@@ -15,6 +15,7 @@ backbone_ckpt_config = {
     'vit': 'checkpoints/vit-large-p16_in21k-pre-3rdparty_ft-64xb64_in1k-384_20210928-b20ba619.pth',
     'dinov2': 'checkpoints/vit-large-p14_dinov2-pre_3rdparty_20230426-f3302d9e.pth',
     'uni': 'checkpoints/uni.bin',
+    'convnext': 'checkpoints/convnext-large_in21k-pre-3rdparty_64xb64_in1k_20220124-2412403d.pth'
 }
 backbone_ckpt = backbone_ckpt_config[baseline_backbone]
 optim_wrapper = dict(

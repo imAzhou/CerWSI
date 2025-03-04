@@ -72,14 +72,13 @@ class CerMClassifier(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def calc_logits(self, feature_emb: torch.Tensor):
+    def calc_logits(self, img_tokens: torch.Tensor):
         '''
         Args:
-            feature_emb: (bs,cls_token+img_token,C)
+            img_tokens: (bs,img_token,C)
         Return:
             img_logits: (bs, 1)
         '''
-        img_tokens = feature_emb[:,1:,:]  # (bs, num_tokens, C)
         bs,num_tokens,C = img_tokens.shape
         feat_size = int(math.sqrt(num_tokens))
         inputx = img_tokens.reshape(bs, C, feat_size, feat_size)

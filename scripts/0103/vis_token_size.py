@@ -33,8 +33,8 @@ if __name__ == '__main__':
     # img_dir = 'data_resource/cls_pn/cut_img/square_cut'
     # img_name = 'JFSW_1_1_sq30'
     # img_path = f'{img_dir}/{img_name}.png'
-    img_name = '03649_17'
-    img_path = '/x22201018/datasets/CervicalDatasets/ComparisonDetectorDataset/test_square/03649_17.png'
+    img_name = '00083_1'
+    img_path = '/c22073/zly/datasets/CervicalDatasets/ComparisonDetectorDataset/images/Pos/00083_1.png'
     save_dir = f'statistic_results/patchsize_in_image'
     os.makedirs(save_dir, exist_ok=True)
     

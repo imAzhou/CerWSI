@@ -11,12 +11,13 @@ from torchvision import transforms
 from mmengine.config import Config
 # from cerwsi.nets import MultiPatchUNI
 from cerwsi.nets import CerMCNet
-from cerwsi.utils import MyMultiTokenMetric
+from cerwsi.utils import MyMultiTokenMetric,MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, build_evaluator,is_main_process
 import json
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+from torchvision import transforms
 
 from prettytable import PrettyTable
 from cerwsi.utils import calculate_metrics,print_confusion_matrix,draw_OD
@@ -61,8 +62,8 @@ def load_data(cfg):
         # 拆分 batch 中的图像和标签
         images = [item[0] for item in batch]  # 所有 image_tensor，假设 shape 一致
         image_labels = [item[1] for item in batch]
-        image_paths = [item[3] for item in batch]
         token_labels = [item[2] for item in batch]
+        image_paths = [item[3] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
@@ -110,6 +111,7 @@ def load_data(cfg):
 def test_net(cfg, model):
     trainloader,valloader = load_data(cfg)
     evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
+    # evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
 
     model.eval()
     pbar = valloader
@@ -224,26 +226,4 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 script
     log/cdetector_mini/ours/config.py \
     log/cdetector_mini/ours/checkpoints/best.pth \
     log/cdetector_mini/ours
-
-    
-+--------+------+-------+------+-----+
-| ASC-US | LSIL | ASC-H | HSIL | AGC |
-+--------+------+-------+------+-----+
-|  343   | 182  |   64  |  8   | 180 |
-+--------+------+-------+------+-----+
-+----------+-------------+-------------+
-| accuracy | sensitivity | specificity |
-+----------+-------------+-------------+
-|  0.9355  |    0.953    |    0.9214   |
-+----------+-------------+-------------+
-+-----------------------------+
-|       confusion matrix      |
-+-----+-------+-------+-------+
-|     |   0   |   1   |  sum  |
-+-----+-------+-------+-------+
-|  0  | 18685 |  1593 | 20278 |
-|  1  |  761  | 15441 | 16202 |
-| sum | 19446 | 17034 | 36480 |
-+-----+-------+-------+-------+
-conflict_pred: 578
 '''

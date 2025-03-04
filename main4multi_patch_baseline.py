@@ -8,7 +8,7 @@ import torch.distributed as dist
 import argparse
 from torchvision import transforms
 from mmengine.config import Config
-from cerwsi.nets import MultiResNet,MultiVit,MultiUNI
+from cerwsi.nets import MultiResNet,MultiVit,MultiUNI,MultiConvNext
 from cerwsi.utils import MultiPosMetric
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy, build_evaluator,reduce_loss,is_main_process
 
@@ -150,6 +150,8 @@ def main():
     
     if cfg.baseline_backbone == 'resnet50':
         model = MultiResNet(num_classes = d_cfg['num_classes']).to(device)
+    if cfg.baseline_backbone == 'convnext':
+        model = MultiConvNext(num_classes = d_cfg['num_classes']).to(device)
     elif cfg.baseline_backbone in ['vit', 'dinov2']:
         model = MultiVit(num_classes = d_cfg['num_classes'], backbone_type=cfg.baseline_backbone).to(device)
     elif cfg.baseline_backbone == 'uni':

@@ -1,2 +1,3 @@
 from .token_dataset import TokenDataset
-from .token_cls_dataset import TokenClsDataset
+from .cls_dataset import ClsDataset
+from .load_data import *

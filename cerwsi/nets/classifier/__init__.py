@@ -6,5 +6,5 @@
 # from .chief import CerMClassifier
 # from .v3 import CerMClassifier
 # from .v4 import CerMClassifier
-from .v5 import CerMClassifier
+from .wscer import CerMClassifier
 # from .v6 import CerMClassifier

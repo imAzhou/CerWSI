@@ -6,8 +6,8 @@ import json
 from torchvision import transforms
 
 # 自定义数据集类
-class TokenClsDataset(Dataset):
-    def __init__(self, root_dir, mode, transform):
+class ClsDataset(Dataset):
+    def __init__(self, root_dir, annojson_path, transform):
         """
         Args:
             img_dir (str): img dir
@@ -16,7 +16,7 @@ class TokenClsDataset(Dataset):
         self.img_dir = f'{root_dir}/images'
         self.annofiles_dir = f'{root_dir}/annofiles'
 
-        with open(f'{self.annofiles_dir}/mini_{mode}_patches.json', 'r') as f:
+        with open(annojson_path, 'r') as f:
             self.patch_infolist = json.load(f)
         
         self.transform = transform

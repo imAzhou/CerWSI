@@ -125,7 +125,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4CerMCNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4CerMCNet.py \
     configs/dataset/l_cerscan_dataset.py \
     configs/train_strategy.py \
     --record_save_dir log/l_cerscan

@@ -26,8 +26,8 @@ def load_data(cfg):
 
     train_transform = transforms.Compose([
         transforms.Resize(cfg.img_size),
-        transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
-        transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
+        # transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+        # transforms.RandomVerticalFlip(p=0.5),    # 随机垂直翻转
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])

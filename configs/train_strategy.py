@@ -7,8 +7,8 @@ max_epochs = 50
 warmup_epoch = 5
 gamma = 0.95
 save_each_epoch = False
-frozen_backbone = False
-use_lora = False
+frozen_backbone = True
+use_lora = True
 backbone_type = 'uni'
 backbone_ckpt_config = {
     'vit': 'checkpoints/vit-large-p16_in21k-pre-3rdparty_ft-64xb64_in1k-384_20210928-b20ba619.pth',

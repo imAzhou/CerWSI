@@ -4,6 +4,8 @@ import math
 import torch.nn.functional as F
 from typing import Tuple, Type
 from .feat_pe import get_feat_pe
+from .meta_classifier import MetaClassifier
+from cerwsi.utils import build_evaluator, MyMultiTokenMetric
 
 class MLPBlock(nn.Module):
     def __init__(
@@ -163,12 +165,15 @@ class Attention(nn.Module):
         return out, attn_
 
 
-class CerMClassifier(nn.Module):
-    def __init__(self, num_classes, num_patches, embed_dim):
-        '''
-        num_classes: positive classes number + 1
-        '''
-        super(CerMClassifier, self).__init__()
+class WSCerMLC(MetaClassifier):
+    def __init__(self, **args):
+        
+        input_embed_dim = args.input_embed_dim
+        num_classes = args.num_classes
+        num_patches = args.num_patches
+        evaluator = build_evaluator([MyMultiTokenMetric(thr = args.positive_thr)])
+        super(WSCerMLC, self).__init__(evaluator, **args)
+
         depth = 2
         proj_dim_1 = 512
         num_heads = 8
@@ -178,7 +183,7 @@ class CerMClassifier(nn.Module):
         self.num_classes = num_classes
         
         self.proj_1 = nn.Sequential(
-            nn.Linear(embed_dim, proj_dim_1),
+            nn.Linear(input_embed_dim, proj_dim_1),
             nn.ReLU(),
             nn.Dropout(0.25)
         )
@@ -201,18 +206,8 @@ class CerMClassifier(nn.Module):
         self.cls_pos_heads = nn.ModuleList()
         for i in range(num_classes-1):
             self.cls_pos_heads.append(nn.Linear(num_patches, 1))
-        
-    @property
-    def device(self):
-        return next(self.parameters()).device
 
     def calc_logits(self, img_tokens: torch.Tensor):
-        '''
-        Args:
-            feature_emb: (bs,img_token,C)
-        Return:
-            img_logits: (bs, 1)
-        '''
         keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
 
         bs, num_tokens, embed_dim = keys_1.shape
@@ -262,11 +257,7 @@ class CerMClassifier(nn.Module):
     
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()
-        binary_matrix = torch.zeros_like(pos_logits, dtype=torch.float32)
-        for i, token_labels in enumerate(databatch['token_labels']):
-            label_list = list(set([tk[-1] -1 for tk in token_labels]))  # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
-            binary_matrix[i, label_list] = 1
-
+        binary_matrix = databatch['multi_pos_labels'].to(self.device)
         loss = loss_fn(pos_logits, binary_matrix)
         return loss
     

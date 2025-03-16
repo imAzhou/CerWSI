@@ -8,7 +8,7 @@ from .backbone import get_backbone
 class CerMCNet(nn.Module):
     def __init__(self, num_classes, backbone_type, use_lora, img_size):
         super(CerMCNet, self).__init__()
-        assert backbone_type in ['vit', 'dinov2', 'uni']
+        assert backbone_type in ['vit', 'dinov2', 'uni', 'ctrans']
         self.backbone,self.embed_dim,self.num_patches = get_backbone(backbone_type, img_size)
         self.backbone_type = backbone_type
         self.use_lora = use_lora
@@ -41,7 +41,9 @@ class CerMCNet(nn.Module):
                 new_name = key.replace('backbone.', '')
                 new_state_dict[new_name] = value
             print(self.backbone.load_state_dict(new_state_dict, strict=False))
-        else:
+        elif self.backbone_type == 'ctrans':
+            print(self.backbone.load_state_dict(params_weight['model'], strict=False))
+        elif self.backbone_type == 'uni':
             print(self.backbone.load_state_dict(params_weight, strict=False))
         
         if self.use_lora:
@@ -65,6 +67,8 @@ class CerMCNet(nn.Module):
             output = output[:,1:,:]  # (bs, num_tokens, C)
         elif self.backbone_type in ['vit', 'dinov2']:
             output = (self.backbone(x))[0]  # (bs,L,C)
+        elif self.backbone_type == 'ctrans':
+            output = self.backbone.forward_features(x)  # (bs,L,C)
         return output
     
     def forward(self, data_batch, mode, optim_wrapper=None):        

@@ -4,6 +4,7 @@ import time
 from mmpretrain.structures import DataSample
 import argparse
 import cv2
+from mmengine.config import Config
 from math import ceil
 import numpy as np
 from PIL import Image
@@ -13,16 +14,17 @@ from multiprocessing import Pool
 import warnings
 import os
 import copy
+from torchvision import transforms
 from mmengine.logging import MMLogger
 from cerwsi.utils import (KFBSlide, set_seed,)
-from cerwsi.nets import ValidClsNet, PatchClsNet, PatchClsDINO
+from cerwsi.nets import ValidClsNet, CerMCNet
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
-PATCH_EDGE = 500
+PATCH_EDGE = 700
 CERTAIN_THR = 0.7
-NEGATIVE_THR = 0.7
+NEGATIVE_THR = 0.5
 positive_ratio_thr = 0.005
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
@@ -54,35 +56,43 @@ def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix)
         
         if args.visual_pred and n_tag in args.visual_pred:
             new_save_prefix = save_prefix.replace('valid_tag', n_tag)
+            folder_path = os.path.dirname(new_save_prefix)
+            os.makedirs(folder_path, exist_ok=True)
             o_img.save(f'{new_save_prefix}_{sum(curent_id)}.png')
 
     return valid_input
 
 def inference_batch_pn(pn_model, valid_input, save_prefix):
-    data_batch = dict(inputs=[], data_samples=[])
-    for read_result in valid_input:
-        img_input = cv2.cvtColor(np.array(read_result), cv2.COLOR_RGB2BGR)
-        img_input = torch.as_tensor(cv2.resize(img_input, (224,224)))
-        data_batch['inputs'].append(img_input.permute(2,0,1))    # (bs, 3, h, w)
-        data_batch['data_samples'].append(DataSample())
     
-    data_batch['inputs'] = torch.stack(data_batch['inputs'], dim=0)
+    transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
+    
+    img_inputs = [transform(read_result) for read_result in valid_input]
+    images_tensor = torch.stack(img_inputs, dim=0)
+    data_batch = dict(images=images_tensor)
+
     with torch.no_grad():
-        outputs = pn_model.val_step(data_batch)
+        outputs = pn_model(data_batch, 'val')
+    if outputs['img_probs'].numel() == 1:
+        outputs['img_probs'] = outputs['img_probs'].unsqueeze(0)
     pred_result = []
-    for idx,pred_output in enumerate(outputs):
+    for idx,pred_output in enumerate(outputs['img_probs']):
         o_img = valid_input[idx]
-        pred_clsid = 0 if int(pred_output.pred_score[0] > NEGATIVE_THR) else 1
-        pred_result.append([pred_clsid, *[round(conf.item(), 6) for conf in pred_output.pred_score]])
+        pred_clsid = 1 if int(pred_output > NEGATIVE_THR) else 0
+        pred_result.append([pred_clsid, *[round(conf.detach().item(), 6) for conf in [pred_output, *outputs['pos_probs'][idx]]]])
         if args.visual_pred and str(pred_clsid) in args.visual_pred:
             timestamp = time.time()
+            os.makedirs(f'{save_prefix}/{pred_clsid}', exist_ok=True)
             o_img.save(f'{save_prefix}/{pred_clsid}/{timestamp}.png')
-    return pred_result       
+    return pred_result
 
 
 def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, patientId):
     
-    save_root_dir = f'predict_results/w{PATCH_EDGE}/{patientId}'
+    save_root_dir = f'predict_results/{patientId}'
     save_prefix = f'{save_root_dir}/valid_tag/{patientId}_c{proc_id}'
 
     if args.visual_pred is not None:
@@ -90,7 +100,7 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
             save_dir = f'{save_root_dir}/{tag}'
             os.makedirs(save_dir, exist_ok=True)
     
-    slide = KFBSlide(kfb_path)
+    slide = KFBSlide(args.kfb_root_dir + kfb_path)
     read_result_pool, valid_read_result = [], []
     curent_id = [0,0,0]
     pn_pred_results = []
@@ -112,24 +122,22 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
             valid_read_result = []
 
     del read_result_pool
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
+    # torch.cuda.synchronize()
     print(f'Core: {proc_id}, process {sum(curent_id)} patches done!!')
     return curent_id, pn_pred_results
 
 def get_pn_model(device):
-    if args.pn_model_type == 'resnet50':
-        pn_model = PatchClsNet(num_classes = args.num_classes)
-    elif args.pn_model_type == 'dinov2_s':
-        pn_model = PatchClsDINO(num_classes = args.num_classes, device=device)
+    cfg = Config.fromfile(args.config_file)
     
-    pn_model.to(device)
-    pn_model.eval()
-    pn_state_dict = torch.load(args.pn_model_ckpt)
-    if 'state_dict' in pn_state_dict:
-        pn_state_dict = pn_state_dict['state_dict']
-    pn_model.load_state_dict(pn_state_dict)
-
-    return pn_model
+    model = CerMCNet(
+        num_classes = cfg['num_classes'], 
+        backbone_type = cfg.backbone_type,
+        use_lora=cfg.use_lora
+    ).to(device)
+    model.load_ckpt(args.ckpt)
+    model.eval()
+    return model
 
 def multiprocess_inference():
     all_kfb_info = pd.read_csv(args.test_csv_file)
@@ -155,7 +163,7 @@ def multiprocess_inference():
     for row in all_kfb_info.itertuples(index=True):
         start_time = time.time()
         print('collecting start points... ')
-        slide = KFBSlide(row.kfb_path)
+        slide = KFBSlide(args.kfb_root_dir + row.kfb_path)
         width, height = slide.level_dimensions[0]
         iw, ih = ceil(width/PATCH_EDGE), ceil(height/PATCH_EDGE)
         r2 = (int(max(iw, ih)*1.1)//2)**2
@@ -197,14 +205,18 @@ def multiprocess_inference():
             logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}, total: {len(slide_start_points)}')
         else:
             pn_result = np.array(pn_result)
-            pn_result_patch_clsid = pn_result[:,0]
+            if len(pn_result) == 0: # 无任何 valid image
+                pn_result_patch_clsid = []
+                pred_confi = []
+            else:
+                pn_result_patch_clsid = pn_result[:,0]
+                pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in pn_result[:, 1:]]
             p_path_num = int(np.sum(pn_result_patch_clsid))
             n_patch_num = len(pn_result_patch_clsid) - p_path_num
-            p_ratio = p_path_num / (p_path_num + n_patch_num)
+            p_ratio = p_path_num / (p_path_num + n_patch_num + 1e-6)    # 防止除0
             pred_clsid = int(p_ratio > positive_ratio_thr)
             logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}(positive:{p_path_num} negative:{n_patch_num} p_ratio:{p_ratio:0.4f} pred/gt:{pred_clsid}/{row.kfb_clsid}-{row.kfb_clsname})')
             pred_kfb_info.append([row.kfb_path, row.kfb_clsid, p_path_num, n_patch_num])
-            pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in pn_result[:, 1:]]
             posi_confi_save_dir = f'{args.record_save_dir}/posi_conf'
             os.makedirs(posi_confi_save_dir, exist_ok=True)
             with open(f'{posi_confi_save_dir}/{row.patientId}.txt', 'w') as f:
@@ -223,10 +235,10 @@ def multiprocess_inference():
 parser = argparse.ArgumentParser()
 parser.add_argument('test_csv_file', type=str)
 parser.add_argument('valid_model_ckpt', type=str)
-parser.add_argument('pn_model_type', type=str, choices=['resnet50', 'dinov2_s'])
-parser.add_argument('pn_model_ckpt', type=str)
+parser.add_argument('config_file', type=str)
+parser.add_argument('ckpt', type=str)
+parser.add_argument('--kfb_root_dir', type=str, default='/medical-data/data/')
 parser.add_argument('--record_save_dir', type=str)
-parser.add_argument('--num_classes', type=int, default=2)
 parser.add_argument('--only_valid', action='store_true')
 parser.add_argument('--visual_pred', type=str, nargs='*', choices=['0', '1', 'invalid', 'valid', 'uncertain'])
 parser.add_argument('--cpu_num', type=int, default=1, help='multiprocess cpu num')
@@ -245,16 +257,17 @@ if __name__ == '__main__':
 Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncertain: 72, total: 7306
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
-python test_wsi.py \
-    data_resource/cls_pn/1127_val.csv \
+CUDA_VISIBLE_DEVICES=2 python test_wsi_v2.py \
+    data_resource/debug.csv \
     checkpoints/vlaid_cls_best.pth \
-    resnet50 \
-    checkpoints/pn_cls_best/rcp_c6_hs.pth \
-    --record_save_dir log/1127_val_hs \
-    --num_classes 6 \
+    log/l_cerscan/use_posinneg/config.py \
+    log/l_cerscan/use_posinneg/checkpoints/best.pth \
+    --record_save_dir log/debug \
     --cpu_num 8 \
-    --test_bs 64 \
+    --test_bs 128 \
+    --kfb_root_dir /nfs5/zly/
     --visual_pred 1
+    --kfb_root_dir /nfs5/zly/
     --only_valid \
     --visual_pred invalid valid 1
 '''

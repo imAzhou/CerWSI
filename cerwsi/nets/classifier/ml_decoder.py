@@ -3,7 +3,8 @@ import torch.nn.functional as F
 import torch
 from torch import nn, Tensor
 from torch.nn.modules.transformer import _get_activation_fn
-
+from .meta_classifier import MetaClassifier
+from cerwsi.utils import build_evaluator, MultiPosMetric
 
 class TransformerDecoderLayerOptimal(nn.Module):
     def __init__(self, d_model, nhead=8, dim_feedforward=2048, dropout=0.1, activation="relu",
@@ -76,14 +77,17 @@ class GroupFC(object):
             out_extrap[:, i, :] = torch.matmul(h_i, w_i)
 
 
-class CerMClassifier(nn.Module):
-    def __init__(self, num_classes, num_patches, embed_dim):
-        super(CerMClassifier, self).__init__()
-        num_of_groups=-1
-        decoder_embedding=768
-        initial_num_features=embed_dim
-        zsl=0
-        num_classes = num_classes-1 # 只检测阳性类别
+class MLDecoder(MetaClassifier):
+    def __init__(self, **args):
+        
+        input_embed_dim = args.input_embed_dim
+        num_classes = args.num_classes - 1 # 只检测阳性类别
+        evaluator = build_evaluator([MultiPosMetric(thr = args.positive_thr)])
+        super(MLDecoder, self).__init__(evaluator, **args)
+
+        num_of_groups = -1
+        decoder_embedding = 768
+        zsl = 0
         
         embed_len_decoder = 100 if num_of_groups < 0 else num_of_groups
         if embed_len_decoder > num_classes:
@@ -91,7 +95,7 @@ class CerMClassifier(nn.Module):
 
         # switching to 768 initial embeddings
         decoder_embedding = 768 if decoder_embedding < 0 else decoder_embedding
-        embed_standart = nn.Linear(initial_num_features, decoder_embedding)
+        embed_standart = nn.Linear(input_embed_dim, decoder_embedding)
 
         # non-learnable queries
         if not zsl:
@@ -132,10 +136,6 @@ class CerMClassifier(nn.Module):
         self.train_wordvecs = None
         self.test_wordvecs = None
 
-    @property
-    def device(self):
-        return next(self.parameters()).device
-    
     def calc_logits(self, x):
         if len(x.shape) == 4:  # [bs,2048, 7,7]
             embedding_spatial = x.flatten(2).transpose(1, 2)
@@ -164,19 +164,11 @@ class CerMClassifier(nn.Module):
         logits = h_out
         return logits
     
-    def calc_pos_loss(self, pos_logits, databatch):
-        loss_fn = nn.BCEWithLogitsLoss()
-        binary_matrix = torch.zeros_like(pos_logits, dtype=torch.float32)
-        for i, token_labels in enumerate(databatch['token_labels']):
-            label_list = list(set([tk[-1] -1 for tk in token_labels]))  # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
-            binary_matrix[i, label_list] = 1
-
-        loss = loss_fn(pos_logits, binary_matrix)
-        return loss
-    
     def calc_loss(self,feature_emb, databatch):
+        loss_fn = nn.BCEWithLogitsLoss()
         pos_logits = self.calc_logits(feature_emb)  # (bs, num_cls-1)
-        pos_loss = self.calc_pos_loss(pos_logits, databatch)
+        binary_matrix = databatch['multi_pos_labels'].to(self.device)
+        pos_loss = loss_fn(pos_logits, binary_matrix)
         return pos_loss
 
     def set_pred(self,feature_emb, databatch):

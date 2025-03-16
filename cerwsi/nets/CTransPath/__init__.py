@@ -1,1 +1,0 @@
-from .ctran import ctranspath

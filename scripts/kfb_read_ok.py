@@ -33,3 +33,4 @@ with open('error_read.txt', 'r') as f:
             print(f'width:{width}, height:{height}')
         except:
             print(f' Error: {error_kfb_path}')
+            

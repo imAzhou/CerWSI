@@ -1,9 +1,10 @@
 from timm import create_model
 from mmpretrain import get_model
+from .CTransPath import CTransPath
 
 def get_backbone(backbone_type, img_size=224):
     '''
-    backbone_type: ['vit', 'dinov2', 'uni']
+    backbone_type: ['vit', 'dinov2', 'uni', 'ctrans']
     '''
     if backbone_type == 'uni':
         backbone = create_model(
@@ -26,6 +27,10 @@ def get_backbone(backbone_type, img_size=224):
         feature_dim = backbone.embed_dims
         feat_size = img_size // patch_size
         num_patches = feat_size * feat_size
+    elif backbone_type == 'ctrans':
+        backbone = CTransPath()
+        feature_dim = 768
+        num_patches = 49
     return backbone,feature_dim,num_patches
 
 

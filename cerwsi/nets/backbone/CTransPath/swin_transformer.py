@@ -20,6 +20,7 @@ import torch.nn as nn
 from torch import _assert
 import torch.utils.checkpoint as checkpoint
 from .helper import Mlp, DropPath, trunc_normal_
+from .conv_stem import ConvStem
 
 
 def window_partition(x, window_size: int):
@@ -379,7 +380,7 @@ class SwinTransformer(nn.Module):
                  embed_dim=96, depths=(2, 2, 6, 2), num_heads=(3, 6, 12, 24),
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
-                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True,embed_layer=None,
+                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True,embed_layer=ConvStem,
                  use_checkpoint=False, weight_init='', **kwargs):
         super().__init__()
 
@@ -464,11 +465,11 @@ class SwinTransformer(nn.Module):
         x = self.pos_drop(x)
         x = self.layers(x)
         x = self.norm(x)  # B L C
-        x = self.avgpool(x.transpose(1, 2))  # B C 1
-        x = torch.flatten(x, 1)
         return x
 
     def forward(self, x):
         x = self.forward_features(x)
+        x = self.avgpool(x.transpose(1, 2))  # B C 1
+        x = torch.flatten(x, 1)
         x = self.head(x)
         return x

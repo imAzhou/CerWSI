@@ -9,17 +9,20 @@ def load_data(cfg):
         # 拆分 batch 中的图像和标签
         images = [item[0] for item in batch]  # 所有 image_tensor，假设 shape 一致
         image_labels = [item[1] for item in batch]
-        token_labels = [item[2] for item in batch]
-        image_paths = [item[3] for item in batch]
+        multi_pos_labels = [item[2] for item in batch]
+        token_labels = [item[3] for item in batch]
+        image_paths = [item[4] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
         imglabels_tensor = torch.as_tensor(image_labels)
+        multilabels_tensor = torch.stack(multi_pos_labels, dim=0)
 
         # 返回一个字典，其中包含张量和不规则的标注信息
         return {
             'images': images_tensor,
             'image_labels': imglabels_tensor,
+            'multi_pos_labels': multilabels_tensor,
             'token_labels': token_labels,
             'image_paths': image_paths
         }
@@ -31,7 +34,7 @@ def load_data(cfg):
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
-    train_dataset = ClsDataset(cfg.data_root, cfg.train_annojson, train_transform)
+    train_dataset = ClsDataset(cfg.data_root, cfg.train_annojson, train_transform, cfg.num_classes)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -44,7 +47,7 @@ def load_data(cfg):
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
-    val_dataset = ClsDataset(cfg.data_root, cfg.val_annojson, val_transform)
+    val_dataset = ClsDataset(cfg.data_root, cfg.val_annojson, val_transform, cfg.num_classes)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,

@@ -164,12 +164,12 @@ def main():
         dist.destroy_process_group()
 
 if __name__ == '__main__':
-    # main()
-    analyze(f'{args.save_dir}/pred_results_0.5.json')
+    main()
+    # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 scripts/analyze/test_multilabel.py \
-    log/l_cerscan/best/config.py \
-    log/l_cerscan/best/checkpoints/best.pth \
-    log/l_cerscan/best
+    log/l_cerscan/2025_03_12_16_31_26/config.py \
+    log/l_cerscan/2025_03_12_16_31_26/checkpoints/best.pth \
+    log/l_cerscan/2025_03_12_16_31_26
 '''

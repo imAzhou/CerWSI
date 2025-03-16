@@ -7,7 +7,7 @@ from torchvision import transforms
 
 # 自定义数据集类
 class ClsDataset(Dataset):
-    def __init__(self, root_dir, annojson_path, transform):
+    def __init__(self, root_dir, annojson_path, transform, num_classes):
         """
         Args:
             img_dir (str): img dir
@@ -20,6 +20,7 @@ class ClsDataset(Dataset):
             self.patch_infolist = json.load(f)
         
         self.transform = transform
+        self.num_classes = num_classes
 
     def __len__(self):
         return len(self.patch_infolist)
@@ -34,17 +35,10 @@ class ClsDataset(Dataset):
         image_label = imginfo['diagnose']
         gtmap_14 = imginfo['gtmap_14']
         
-        # label_map = {
-        #     1:1,
-        #     2:1,
-        #     3:2,
-        #     4:2,
-        #     5:3
-        # }
-        # token_label = []
-        # for label in imginfo['gtmap_14']:
-        #     h,w,cid = label
-        #     token_label.append([h,w,label_map[cid]])
+        multi_pos_labels = torch.zeros((self.num_classes-1,))
+        # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
+        label_list = list(set([tk[-1] -1 for tk in gtmap_14]))
+        multi_pos_labels[label_list] = 1
 
-        return input_tensor,image_label,gtmap_14,imgpath
+        return input_tensor,image_label,multi_pos_labels,gtmap_14,imgpath
 

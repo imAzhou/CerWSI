@@ -5,6 +5,8 @@ from tqdm import tqdm
 import torch.distributed as dist
 import argparse
 from mmengine.config import Config
+import torchvision
+torchvision.disable_beta_transforms_warning()
 from cerwsi.nets import PatchClsNet
 from cerwsi.datasets import load_data
 from cerwsi.utils import set_seed, init_distributed_mode, get_logger, get_train_strategy,reduce_loss,is_main_process
@@ -102,13 +104,14 @@ def main():
         cfg.merge_from_dict(sub_cfg.to_dict())
     
     model = PatchClsNet(cfg).to(device)
+    model.load_backbone(cfg.backbone_ckpt, frozen=cfg.frozen_backbone)
     model_without_ddp = model
-
+    
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     
-    model_without_ddp.load_backbone(cfg.backbone_ckpt, frozen=cfg.frozen_backbone)
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -118,9 +121,9 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4PatchClsNet.py \
-    configs/dataset/l_cerscan_dataset.py \
-    configs/model/resnet.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
+    configs/dataset/cdetector_dataset.py \
+    configs/model/wscernet.py \
     configs/strategy.py \
-    --record_save_dir log/debug
+    --record_save_dir log/cdetector/wscernet
 '''

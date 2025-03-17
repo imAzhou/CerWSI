@@ -5,15 +5,11 @@ from timm.layers import resample_abs_pos_embed
 from .meta_backbone import MetaBackbone
 
 class UNI(MetaBackbone):
-    def __init__(self, **args):
-
+    def __init__(self, args):
+        super(UNI, self).__init__(args)
         self.backbone = create_model(
             "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
         )
-        output_embed_dim = self.backbone.embed_dim
-        num_tokens = self.backbone.patch_embed.num_patches
-        super(UNI, self).__init__(output_embed_dim, num_tokens, **args)
-
         self.use_lora = args.use_lora
         if args.use_lora:
             self.lora_config = LoraConfig(
@@ -29,11 +25,10 @@ class UNI(MetaBackbone):
         params_weight = torch.load(ckpt, map_location=self.device)
         if self.use_lora:
             backbone_with_lora = self.backbone.state_dict()
-            backbone_with_lora.update({
-                new_key: params_weight[old_key]
-                for new_key, old_key in zip(backbone_with_lora.keys(), params_weight.keys())
-                if old_key in params_weight
-            })
+            for old_key in params_weight.keys():
+                new_key = 'model.' + old_key
+                if new_key in backbone_with_lora.keys():
+                    backbone_with_lora.update({new_key: params_weight[old_key]})
             print(self.backbone.load_state_dict(backbone_with_lora, strict=False))
         else:
             print(self.backbone.load_state_dict(params_weight, strict=False))

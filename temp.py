@@ -1,7 +1,6 @@
 import torch
 from mmengine.config import Config
 from cerwsi.nets import PatchClsNet
-from cerwsi.datasets import load_data
 
 device = torch.device(f'cpu')
 

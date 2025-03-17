@@ -8,7 +8,5 @@ num_classes = len(classes)
 train_bs = 128
 val_bs = 128
 
-img_size = 224
-
 train_annojson = f'{data_root}/annofiles/train_patches_v0309.json'
 val_annojson = f'{data_root}/annofiles/val_patches_v0309.json'

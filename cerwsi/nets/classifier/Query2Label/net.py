@@ -12,9 +12,9 @@ import torch.distributed as dist
 import numpy as np
 import math
 
-from cerwsi.nets.Query2Label.backbone import build_backbone
-from cerwsi.nets.Query2Label.transformer import build_transformer
-from cerwsi.nets.Query2Label.misc import clean_state_dict
+from .backbone import build_backbone
+from .transformer import build_transformer
+from .misc import clean_state_dict
 
 class GroupWiseLinear(nn.Module):
     # could be changed to: 

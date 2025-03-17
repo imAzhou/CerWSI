@@ -4,8 +4,9 @@ from .vit import ViT
 from .dinov2 import DINOV2
 from .uni import UNI
 from .ctranspath import CTransPath
+from .SVT_backbone import SVTBackbone
 
-allowed_backbone_type = ['resnet', 'convnext', 'vit', 'dinov2', 'uni', 'ctranspath']
+allowed_backbone_type = ['resnet', 'convnext', 'vit', 'dinov2', 'uni', 'ctranspath', 'svt']
 
 def get_backbone(args):
     backbone_type = args.backbone_type
@@ -24,5 +25,7 @@ def get_backbone(args):
         backbone = UNI
     if backbone_type == 'ctranspath':
         backbone = CTransPath
+    if backbone_type == 'svt':
+        backbone = SVTBackbone
     
     return backbone(args)

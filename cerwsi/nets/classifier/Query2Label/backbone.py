@@ -14,7 +14,7 @@ from torch import nn
 from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
 
-from cerwsi.nets.Query2Label.position_encoding import build_position_encoding
+from .position_encoding import build_position_encoding
 
 
 def get_model_path(modelname):

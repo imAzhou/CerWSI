@@ -166,9 +166,9 @@ class Attention(nn.Module):
 
 
 class WSCerMLC(MetaClassifier):
-    def __init__(self, **args):
+    def __init__(self, args):
         
-        input_embed_dim = args.input_embed_dim
+        input_embed_dim = args.backbone_output_dim[0]
         num_classes = args.num_classes
         num_patches = args.num_patches
         evaluator = build_evaluator([MyMultiTokenMetric(thr = args.positive_thr)])

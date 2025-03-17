@@ -3,7 +3,7 @@ from mmpretrain import get_model
 from .meta_backbone import MetaBackbone
 
 class ViT(MetaBackbone):
-    def __init__(self, **args):
+    def __init__(self, args):
         '''
         out_type: 'cls_token' / 'raw'
         with_cls_token: True / False
@@ -17,11 +17,7 @@ class ViT(MetaBackbone):
             pretrained=False,
             backbone=dict(out_type=args.out_type, with_cls_token=args.with_cls_token)
         ).backbone
-        output_embed_dim = self.backbone.embed_dims
-        patch_size = 16
-        feat_size = args.img_size // patch_size
-        num_tokens = feat_size * feat_size
-        super(ViT, self).__init__(output_embed_dim, num_tokens, **args)
+        super(ViT, self).__init__(args)
 
     def load_backbone(self, ckpt):
         state_dict = torch.load(ckpt, map_location=self.device)

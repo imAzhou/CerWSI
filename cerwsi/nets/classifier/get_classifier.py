@@ -4,8 +4,9 @@ from .chief import CHIEF
 from .ml_decoder import MLDecoder
 from .query2label import Query2Label
 from .wscer_mlc import WSCerMLC
+from .SVT_classifier import SVTClassifier
 
-allowed_classifier_type = ['binary_linear', 'mlc_linear', 'chief', 'ml_decoder', 'query2label', 'wscer_mlc']
+allowed_classifier_type = ['binary_linear', 'mlc_linear', 'chief', 'ml_decoder', 'query2label', 'wscer_mlc', 'svt']
 
 def get_classifier(args):
     classifier_type = args.classifier_type
@@ -24,5 +25,7 @@ def get_classifier(args):
         classifier = Query2Label
     if classifier_type == 'wscer_mlc':
         classifier = WSCerMLC
+    if classifier_type == 'svt':
+        classifier = SVTClassifier
     
     return classifier(args)

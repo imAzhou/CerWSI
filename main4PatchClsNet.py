@@ -104,7 +104,6 @@ def main():
         cfg.merge_from_dict(sub_cfg.to_dict())
     
     model = PatchClsNet(cfg).to(device)
-    model.load_backbone(cfg.backbone_ckpt, frozen=cfg.frozen_backbone)
     model_without_ddp = model
     
     if args.distributed:
@@ -121,7 +120,7 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/cdetector_dataset.py \
     configs/model/wscernet.py \
     configs/strategy.py \

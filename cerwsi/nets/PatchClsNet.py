@@ -14,14 +14,12 @@ class PatchClsNet(nn.Module):
         self.neck = get_neck(cfg)
         self.classifier = get_classifier(cfg)
         
+        if cfg.frozen_backbone:
+            self.freeze_backbone()
+        
     @property
     def device(self):
         return next(self.parameters()).device
-    
-    def load_backbone(self, ckpt, frozen):
-        self.backbone.load_backbone(ckpt)
-        if frozen:
-            self.freeze_backbone()
     
     def freeze_backbone(self):
         '''frozen the backbone params'''

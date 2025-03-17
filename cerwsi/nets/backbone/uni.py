@@ -10,6 +10,9 @@ class UNI(MetaBackbone):
         self.backbone = create_model(
             "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
         )
+        if args.backbone_ckpt is not None:
+            self.load_backbone(args.backbone_ckpt)
+
         self.use_lora = args.use_lora
         if args.use_lora:
             self.lora_config = LoraConfig(
@@ -22,16 +25,9 @@ class UNI(MetaBackbone):
             self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
 
     def load_backbone(self, ckpt):
-        params_weight = torch.load(ckpt, map_location=self.device)
-        if self.use_lora:
-            backbone_with_lora = self.backbone.state_dict()
-            for old_key in params_weight.keys():
-                new_key = 'model.' + old_key
-                if new_key in backbone_with_lora.keys():
-                    backbone_with_lora.update({new_key: params_weight[old_key]})
-            print(self.backbone.load_state_dict(backbone_with_lora, strict=False))
-        else:
-            print(self.backbone.load_state_dict(params_weight, strict=False))
+        params_weight = torch.load(ckpt, map_location='cpu')
+        load_result = self.backbone.load_state_dict(params_weight, strict=False)
+        print('Load backbone NUI: ' + str(load_result))
 
     def forward(self, x: torch.Tensor):
         output = self.backbone.forward_features(x)

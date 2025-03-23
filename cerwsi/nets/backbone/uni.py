@@ -1,8 +1,25 @@
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, FourierFTConfig, get_peft_model
 from timm import create_model
 from timm.layers import resample_abs_pos_embed
 from .meta_backbone import MetaBackbone
+
+def get_peft_config(peft_type:str):
+    if peft_type == 'lora':
+        return LoraConfig(
+                r=8,  # LoRA 的秩
+                lora_alpha=16,  # LoRA 的缩放因子
+                target_modules = ["qkv", "proj", "fc1", "fc2"],  # 应用 LoRA 的目标模块
+                lora_dropout=0.1,  # Dropout 概率
+                bias="none",  # 是否调整偏置
+            )
+    if peft_type == 'FourierFT':
+        return FourierFTConfig(
+            n_frequency = 1000,
+            target_modules = ["qkv", "proj", "fc1", "fc2"],
+            exclude_modules = ["patch_embed.proj"],
+            scaling = 300.0
+        )
 
 class UNI(MetaBackbone):
     def __init__(self, args):
@@ -13,16 +30,9 @@ class UNI(MetaBackbone):
         if args.backbone_ckpt is not None:
             self.load_backbone(args.backbone_ckpt)
 
-        self.use_lora = args.use_lora
-        if args.use_lora:
-            self.lora_config = LoraConfig(
-                r=8,  # LoRA 的秩
-                lora_alpha=16,  # LoRA 的缩放因子
-                target_modules = ["qkv", "proj", "fc1", "fc2"],  # 应用 LoRA 的目标模块
-                lora_dropout=0.1,  # Dropout 概率
-                bias="none",  # 是否调整偏置
-            )
-            self.backbone = get_peft_model(self.backbone, self.lora_config).base_model
+        if args.use_peft is not None:
+            self.peft_config = get_peft_config(args.use_peft)
+            self.backbone = get_peft_model(self.backbone, self.peft_config).base_model
 
     def load_backbone(self, ckpt):
         params_weight = torch.load(ckpt, map_location='cpu')

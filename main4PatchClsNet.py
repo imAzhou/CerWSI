@@ -125,4 +125,10 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=
     configs/model/wscernet.py \
     configs/strategy.py \
     --record_save_dir log/cdetector/wscernet
+
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
+    configs/dataset/cdetector_dataset.py \
+    configs/model/wscernet.py \
+    configs/strategy.py \
+    --record_save_dir log/cdetector/wscernet
 '''

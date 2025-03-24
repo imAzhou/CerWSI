@@ -27,11 +27,14 @@ class UNI(MetaBackbone):
         self.backbone = create_model(
             "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
         )
-        if args.backbone_ckpt is not None:
-            self.load_backbone(args.backbone_ckpt)
+        backbone_ckpt = args.backbone_cfg['backbone_ckpt']
+        use_peft = args.backbone_cfg['use_peft']
 
-        if args.use_peft is not None:
-            self.peft_config = get_peft_config(args.use_peft)
+        if backbone_ckpt is not None:
+            self.load_backbone(backbone_ckpt)
+
+        if use_peft is not None:
+            self.peft_config = get_peft_config(use_peft)
             self.backbone = get_peft_model(self.backbone, self.peft_config).base_model
 
     def load_backbone(self, ckpt):

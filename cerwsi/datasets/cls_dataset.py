@@ -1,9 +1,7 @@
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-import cv2
 import json
-from torchvision import transforms
 
 # 自定义数据集类
 class ClsDataset(Dataset):
@@ -33,12 +31,17 @@ class ClsDataset(Dataset):
 
         input_tensor = self.transform(image)
         image_label = imginfo['diagnose']
-        gtmap_14 = imginfo['gtmap_14']
-        
-        multi_pos_labels = torch.zeros((self.num_classes-1,))
+        multi_pos_labels = self.get_mliti_pos_labels(imginfo)
+
+        return input_tensor,image_label,multi_pos_labels,imgpath
+
+    def get_mliti_pos_labels(self, imginfo):
         # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
-        label_list = list(set([tk[-1] -1 for tk in gtmap_14]))
+        multi_pos_labels = torch.zeros((self.num_classes-1,))
+        if 'gtmap_14' in imginfo:
+            label_list = list(set([tk[-1] -1 for tk in imginfo['gtmap_14']]))
+        else:
+            label_list = list(set([i-1 for i in imginfo['clsid']]))
         multi_pos_labels[label_list] = 1
-
-        return input_tensor,image_label,multi_pos_labels,gtmap_14,imgpath
-
+        return multi_pos_labels
+    

@@ -32,11 +32,8 @@ class Attn_Net_Gated(nn.Module):
         A = self.attention_c(A)  # N x n_classes
         return A, x
 
-
 class CHIEF(MetaClassifier):
-    def __init__(self, **args):
-        
-        input_embed_dim = args.input_embed_dim
+    def __init__(self, args):
         num_classes = 1 # 只能做阴阳二分类
         evaluator = build_evaluator([BinaryMetric(thr = args.positive_thr)])
         super(CHIEF, self).__init__(evaluator, **args)
@@ -46,10 +43,6 @@ class CHIEF(MetaClassifier):
             "small": [768, 512, 256], 
             "big": [1024, 512, 384], 
             'large': [2048, 1024, 512]
-        }
-        args = {
-            'size_type': "big",
-            'dropout': True
         }
         args = SimpleNamespace(**args)
         size = self.size_dict[args.size_type]
@@ -63,14 +56,13 @@ class CHIEF(MetaClassifier):
         self.classifiers = nn.Linear(size[1], 1)
 
 
-    def calc_logits(self, feature_emb: torch.Tensor):
+    def calc_logits(self, img_tokens: torch.Tensor):
         '''
         Args:
-            feature_emb: (bs,cls_token+img_token,C)
+            img_tokens: (bs,img_token,C)
         Return:
             img_logits: (bs, 1)
         '''
-        img_tokens = feature_emb[:,1:,:]  # (bs, num_tokens, C)
         # A: (bs, num_tokens, pos_cls_num), h: (bs, num_tokens, c=512)
         A, h = self.attention_net(img_tokens)
         A = A.transpose(1, 2)    # A: (bs, 1, num_tokens)

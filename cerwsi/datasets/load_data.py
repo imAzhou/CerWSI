@@ -10,8 +10,7 @@ def load_data(cfg):
         images = [item[0] for item in batch]  # 所有 image_tensor，假设 shape 一致
         image_labels = [item[1] for item in batch]
         multi_pos_labels = [item[2] for item in batch]
-        token_labels = [item[3] for item in batch]
-        image_paths = [item[4] for item in batch]
+        image_paths = [item[3] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
@@ -23,7 +22,6 @@ def load_data(cfg):
             'images': images_tensor,
             'image_labels': imglabels_tensor,
             'multi_pos_labels': multilabels_tensor,
-            'token_labels': token_labels,
             'image_paths': image_paths
         }
 

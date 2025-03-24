@@ -81,10 +81,14 @@ def train_net(cfg, model, model_without_ddp):
                 logger.info(metrics)
                 if cfg.save_each_epoch:
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
-                acc = metrics['multi-label/img_accuracy']
-                sens = metrics['multi-label/img_sensitivity']
-                spec = metrics['multi-label/img_specificity']
-                prime_score = acc + sens + spec
+                
+                if 'AUC' in metrics:
+                    prime_score = metrics['img_accuracy']
+                else:
+                    acc = metrics['multi-label/img_accuracy']
+                    sens = metrics['multi-label/img_sensitivity']
+                    spec = metrics['multi-label/img_specificity']
+                    prime_score = acc + sens + spec
                 if prime_score > max_acc:
                     max_acc = prime_score
                     print(f'Best score update: {prime_score}.')
@@ -121,10 +125,10 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4PatchClsNet.py \
-    configs/dataset/cdetector_dataset.py \
-    configs/model/wscernet.py \
+    configs/dataset/l_cerscanv2_dataset.py \
+    configs/model/chief.py \
     configs/strategy.py \
-    --record_save_dir log/cdetector/wscernet
+    --record_save_dir log/l_cerscan_v2/chief
 
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/cdetector_dataset.py \

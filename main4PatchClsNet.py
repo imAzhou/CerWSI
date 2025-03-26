@@ -44,7 +44,7 @@ def train_net(cfg, model, model_without_ddp):
             pbar = tqdm(trainloader, ncols=80)
         
         for idx, data_batch in enumerate(pbar):
-            # if idx > 10:
+            # if idx > 5:
             #     break
             loss = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
@@ -126,9 +126,9 @@ if __name__ == '__main__':
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/l_cerscanv2_dataset.py \
-    configs/model/chief.py \
+    configs/model/wscernet.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscan_v2/chief
+    --record_save_dir log/l_cerscan_v2/wscernet
 
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/cdetector_dataset.py \

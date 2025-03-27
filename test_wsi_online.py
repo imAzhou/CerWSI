@@ -1,3 +1,5 @@
+import torchvision
+torchvision.disable_beta_transforms_warning()
 import torch
 import json
 import time

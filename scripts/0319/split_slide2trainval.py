@@ -110,10 +110,28 @@ def split_trainvaltest():
         print(table)
 
         df_data.to_csv(f'data_resource/slide_anno/0319/{mode}.csv', index=False)
-        
+
+def split_test():
+    df_test = pd.read_csv('data_resource/slide_anno/0319/test.csv')
+    pos,neg = [],[]
+    for row in df_test.itertuples(index=False):
+        if row.kfb_clsid == 1:
+            pos.append(row)
+        else:
+            neg.append(row)
+    
+    selected_idxs = random.sample(range(len(neg)), len(pos))
+    pos_neg_data = [*pos, *[neg[i] for i in selected_idxs]]
+    neg_data = [neg[i] for i in range(len(neg)) if i not in selected_idxs]
+
+    df_test_posneg = pd.DataFrame(pos_neg_data, columns=df_test.columns)
+    df_test_posneg.to_csv('data_resource/slide_anno/0319/test_posneg.csv', index=False)
+    df_test_neg = pd.DataFrame(neg_data, columns=df_test.columns)
+    df_test_neg.to_csv('data_resource/slide_anno/0319/test_neg.csv', index=False)
 
 if __name__ == '__main__':
-    split_trainvaltest()
+    # split_trainvaltest()
+    split_test()
 
 '''
 +---------------------------------------------------------------------------+

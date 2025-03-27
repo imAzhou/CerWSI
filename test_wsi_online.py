@@ -7,29 +7,26 @@ import cv2
 from mmengine.config import Config
 from math import ceil
 import numpy as np
-import matplotlib.pyplot as plt
-import math
-from scipy.ndimage import zoom
 from PIL import Image
 import pandas as pd
 import multiprocessing
 from multiprocessing import Pool
 import warnings
-import matplotlib.colors as mcolors
 import os
 import copy
 from torchvision import transforms
 from mmengine.logging import MMLogger
 from cerwsi.utils import (KFBSlide, set_seed,)
-from cerwsi.nets import ValidClsNet, CerMCNet
+from cerwsi.nets import ValidClsNet, PatchClsNet
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
+LEVEL = 1
 PATCH_EDGE = 700
 CERTAIN_THR = 0.7
 NEGATIVE_THR = 0.5
-positive_ratio_thr = 0.005
+positive_ratio_thr = 0.05
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
     data_batch = dict(inputs=[], data_samples=[])
@@ -43,14 +40,13 @@ def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix)
     with torch.no_grad():
         outputs = valid_model.val_step(data_batch)
     
-    valid_input,valid_idx = [],[]
+    valid_idx = []
     for idx,pred_output in enumerate(outputs):
         o_img = read_result_pool[idx]
         if max(pred_output.pred_score) > CERTAIN_THR:
             if pred_output.pred_label == 1:
                 n_tag = 'valid'
                 curent_id[1] += 1
-                valid_input.append(o_img)
                 valid_idx.append(idx)
             else:
                 n_tag = 'invalid'
@@ -65,7 +61,7 @@ def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix)
             os.makedirs(folder_path, exist_ok=True)
             o_img.save(f'{new_save_prefix}_{sum(curent_id)}.png')
 
-    return valid_input,valid_idx
+    return valid_idx
 
 def inference_batch_pn(pn_model, valid_input, save_prefix):
     transform = transforms.Compose([
@@ -86,12 +82,19 @@ def inference_batch_pn(pn_model, valid_input, save_prefix):
         o_img = valid_input[idx]
         pred_clsid = 1 if int(pred_output > NEGATIVE_THR) else 0
         # 0/1，img_probs，*cls_pos_probs
-        pred_result.append([pred_clsid, *[round(conf.detach().item(), 6) for conf in [pred_output, *outputs['pos_probs'][idx]]]])
+        res_arr = [pred_clsid, round(pred_output.detach().item(), 6)]
+        if 'pos_probs' in outputs:
+            res_arr.extend([round(conf.detach().item(), 6) for conf in outputs['pos_probs'][idx]])
+        pred_result.append(res_arr)
         if args.visual_pred and str(pred_clsid) in args.visual_pred:
             timestamp = time.time()
             os.makedirs(f'{save_prefix}/{pred_clsid}', exist_ok=True)
             o_img.save(f'{save_prefix}/{pred_clsid}/{timestamp}.png')
-    return pred_result,outputs['attn_array'].detach().cpu()
+    
+    attn_array = None
+    if 'attn_array' in outputs:
+        attn_array = outputs['attn_array'].detach().cpu()   # (bs, layer, num_cls, num_tokens)
+    return pred_result,attn_array
 
 def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, patientId):   
     save_root_dir = f'predict_results/{patientId}'
@@ -103,90 +106,52 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
             os.makedirs(save_dir, exist_ok=True)
     
     slide = KFBSlide(kfb_path)
-    read_result_pool, valid_read_result, valid_heatvalue = [], [], []
+    downsample_ratio = slide.level_downsamples[LEVEL]
+    read_result_pool, valid_read_result = [], []
     curent_id = [0,0,0]
-    pn_pred_results,pn_pred_heatvalue = [],[]
+    total_pred_results = []
     
     for p_idx,(x,y)in enumerate(start_points):
-        location, level, size = (x, y), 0, (PATCH_EDGE, PATCH_EDGE)
+        location, level, size = (x, y), LEVEL, (PATCH_EDGE, PATCH_EDGE)
         read_result = copy.deepcopy(Image.fromarray(slide.read_region(location, level, size)))
-        read_result_pool.append(read_result)
-        valid_heatvalue.append({'point': (int(x),int(y))})
+        coords = np.array([x, y, x+PATCH_EDGE, y+PATCH_EDGE])*downsample_ratio
+        read_result_pool.append({
+            'image': read_result,
+            'coords': coords.tolist(),   # patch 坐标 (在 LEVEL=0上的坐标)
+            'attn_array': [], # 该patch块的阴阳热力值（仅valid patch有此值）
+            'pn_pred': [],  # 该patch块的阳性预测概率（仅valid patch有此值）
+        })
         
         if len(read_result_pool) % args.test_bs == 0 or p_idx == len(start_points)-1:
-            valid_input,valid_idx = inference_valid_batch(
-                valid_model, read_result_pool, curent_id, save_prefix)
+            imgs = [item['image'] for item in read_result_pool]
+            valid_idx = inference_valid_batch(valid_model, imgs, curent_id, save_prefix)
+            valid_read_result.extend([read_result_pool[idx] for idx in valid_idx])
             read_result_pool = []
-            valid_read_result.extend(valid_input)
-            valid_heatvalue = [valid_heatvalue[idx] for idx in valid_idx]
             print(f'\rCore: {proc_id}, 当前已处理: {sum(curent_id)}', end='')
         
         if len(valid_read_result) > 0 and not args.only_valid:
-            pred_result,attn_array = inference_batch_pn(pn_model, valid_read_result, save_root_dir)
-            pn_pred_results.extend(pred_result)
-            for pidx, pitem in enumerate(valid_heatvalue):
-                # 只保存第二次注意力计算后的阴阳二分类的注意力值
-                pitem['attn_array'] = attn_array[pidx][1][0].tolist()
-                pitem['confi_list'] = pred_result[pidx]
-            pn_pred_heatvalue.extend(valid_heatvalue)
+            imgs = [item['image'] for item in valid_read_result]
+            pred_result,attn_array = inference_batch_pn(pn_model, imgs, save_prefix)
+            for pidx, pitem in enumerate(valid_read_result):
+                # 只保存第二次注意力计算后的注意力值
+                if attn_array is not None:
+                    # attn_array.shape: (bs, layer, num_classes, num_tokens)
+                    pitem['attn_array'] = attn_array[pidx][1].tolist()
+                pitem['pn_pred'] = pred_result[pidx]
+                del pitem['image']
+            total_pred_results.extend(valid_read_result)
             valid_read_result = []
-            valid_heatvalue = []
 
-    del read_result_pool
     print(f'Core: {proc_id}, process {sum(curent_id)} patches done!!')
-    return curent_id, pn_pred_results,pn_pred_heatvalue
+    return curent_id, total_pred_results
 
 def get_pn_model(device):
     cfg = Config.fromfile(args.config_file)
-    model = CerMCNet(
-        num_classes = cfg['num_classes'], 
-        backbone_type = cfg.backbone_type,
-        use_lora=cfg.use_lora
-    ).to(device)
+    cfg.backbone_ckpt = None
+    model = PatchClsNet(cfg).to(device)
     model.load_ckpt(args.ckpt)
     model.eval()
     return model
-
-def draw_WSI_heatmap(slide, pn_heatmaps, save_path):
-    width, height = slide.level_dimensions[-1]
-    downsample_ratio = slide.level_downsamples[-1]
-    fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
-    ax.set_xlim(0, width)
-    ax.set_ylim(0, height)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_frame_on(False)
-
-    location, level, size = (0, 0), len(slide.level_downsamples)-1, (width, height)
-    read_result = Image.fromarray(slide.read_region(location, level, size))
-    
-    # 创建全黑背景
-    # ax.imshow(np.zeros((height, width)), cmap='gray', origin='upper')
-    ax.imshow(read_result)
-    total_heatmap = torch.as_tensor([item['attn_array'] for item in pn_heatmaps])
-    total_heatmap = (total_heatmap - total_heatmap.min()) / (total_heatmap.max() - total_heatmap.min())
-    # total_heatmap = torch.pow(total_heatmap, 0.5)   # gamma < 1 提高高值的亮度
-    # colors = [(0, "black"), (0.2, "red"), (0.5, "white"), (1, "red")]
-    # custom_cmap = mcolors.LinearSegmentedColormap.from_list("custom_hot", colors)
-    min_v, max_v = torch.min(total_heatmap), torch.max(total_heatmap)
-    for item in pn_heatmaps:
-        ori_x,ori_y = item['point']
-        sca_x,sca_y = ori_x/downsample_ratio, ori_y/downsample_ratio
-        sca_w = sca_h = PATCH_EDGE/downsample_ratio
-        heatmap_data = torch.as_tensor(item['attn_array'])
-        x, y, w, h = sca_x,sca_y,sca_w,sca_h
-        # 叠加热力图
-        feat_size = int(math.sqrt(len(heatmap_data)))
-        attn_map_2d = heatmap_data.reshape(feat_size, feat_size)
-        scale_factor = sca_w // attn_map_2d.shape[-1]
-        expanded_map = zoom(attn_map_2d, (scale_factor, scale_factor), order=1)  # 双线性插值
-        ax.imshow(expanded_map, cmap='seismic', alpha=1, vmin=min_v, vmax=max_v, 
-              extent=[x, x + w, y + h, y], origin='upper')
-    
-    # 移除边距
-    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    plt.savefig(save_path, dpi=100, bbox_inches='tight', pad_inches=0)
-    plt.close()
 
 def multiprocess_inference():
     all_kfb_info = pd.read_csv(args.test_csv_file)
@@ -212,7 +177,7 @@ def multiprocess_inference():
         start_time = time.time()
         print('collecting start points... ')
         slide = KFBSlide(row.kfb_path)
-        width, height = slide.level_dimensions[0]
+        width, height = slide.level_dimensions[LEVEL]
         iw, ih = ceil(width/PATCH_EDGE), ceil(height/PATCH_EDGE)
         r2 = (int(max(iw, ih)*1.1)//2)**2
         cix, ciy = iw // 2, ih // 2
@@ -237,12 +202,11 @@ def multiprocess_inference():
                                      row.kfb_path, row.patientId))
             processes.append(p)
 
-        valid_result, pn_result, pn_heatmaps = [], [], []
+        valid_result, pn_result = [], []
         for p in processes:
-            valids,pns,pnheat = p.get()
+            valids,pns = p.get()
             valid_result.append(valids)
             pn_result.extend(pns)
-            pn_heatmaps.extend(pnheat)
         workers.close()
         workers.join()
 
@@ -252,13 +216,13 @@ def multiprocess_inference():
         if args.only_valid:
             logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}, total: {len(slide_start_points)}')
         else:
-            pn_result = np.array(pn_result)
-            if len(pn_result) == 0: # 无任何 valid image
+            confi_pred = np.array([res['pn_pred'] for res in pn_result])
+            if len(confi_pred) == 0: # 无任何 valid image
                 pn_result_patch_clsid = []
                 pred_confi = []
             else:
-                pn_result_patch_clsid = pn_result[:,0]
-                pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in pn_result[:, 1:]]
+                pn_result_patch_clsid = confi_pred[:,0]
+                pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in confi_pred[:, 1:]]
 
             # 打印每张 slide 阴阳 patch 预测结果
             p_path_num = int(np.sum(pn_result_patch_clsid))
@@ -273,16 +237,11 @@ def multiprocess_inference():
             with open(f'{posi_confi_save_dir}/{row.patientId}.txt', 'w') as f:
                 f.writelines(pred_confi)
 
-            # 保存整张 slide 的热力图
-            if args.save_wsi_heatmap:
-                os.makedirs(f'{args.record_save_dir}/heatmaps_png', exist_ok=True)
-                save_path = f'{args.record_save_dir}/heatmaps_png/{row.patientId}.png'
-                draw_WSI_heatmap(slide, pn_heatmaps, save_path)
             # 保存每张patch在每个类别上的响应值（热力图）
             heat_save_dir = f'{args.record_save_dir}/heat_value'
             os.makedirs(heat_save_dir, exist_ok=True)
             with open(f'{heat_save_dir}/{row.patientId}.json', 'w') as f:
-                json.dump(pn_heatmaps, f)
+                json.dump(pn_result, f)
 
         if np.sum(curent_id[:,1]) <= 1000 or np.sum(curent_id[:,0]) > np.sum(curent_id[:,1])*2:
             low_valid_kfb_info.append([row.kfb_path, row.kfb_clsid, row.kfb_clsname, row.patientId, row.kfb_source])
@@ -297,7 +256,6 @@ parser.add_argument('config_file', type=str)
 parser.add_argument('ckpt', type=str)
 parser.add_argument('--record_save_dir', type=str)
 parser.add_argument('--only_valid', action='store_true')
-parser.add_argument('--save_wsi_heatmap', action='store_true')
 parser.add_argument('--visual_pred', type=str, nargs='*', choices=['0', '1', 'invalid', 'valid', 'uncertain'])
 parser.add_argument('--cpu_num', type=int, default=1, help='multiprocess cpu num')
 parser.add_argument('--test_bs', type=int, default=16, help='batch size of model test')
@@ -315,15 +273,14 @@ if __name__ == '__main__':
 Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncertain: 72, total: 7306
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
-CUDA_VISIBLE_DEVICES=0 python test_wsi_v2.py \
+CUDA_VISIBLE_DEVICES=0 python test_wsi_online.py \
     data_resource/debug2.csv \
     checkpoints/vlaid_cls_best.pth \
-    log/l_cerscan/use_posinneg/config.py \
-    log/l_cerscan/use_posinneg/checkpoints/best.pth \
-    --record_save_dir log/debug \
+    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/config.py \
+    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/checkpoints/best.pth \
+    --record_save_dir log/debug_ours \
     --cpu_num 8 \
     --test_bs 128 \
-    --save_wsi_heatmap
     --visual_pred 1
     --only_valid \
     --visual_pred invalid valid 1

@@ -3,7 +3,7 @@ _base_ = [
 ]
 
 # backbone
-backbone_type = 'uni'
+backbone_type = 'sam'
 backbone_cfg = _base_.backbone_cfgdict[backbone_type]
 
 # neck
@@ -11,5 +11,5 @@ neck_type = 'identity'
 
 # classifier
 classifier_type = 'chief'
-size_type = 'big'
+size_type = 'small'
 dropout = True

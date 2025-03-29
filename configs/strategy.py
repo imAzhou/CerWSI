@@ -12,4 +12,4 @@ optim_wrapper = dict(
 )
 
 positive_thr = 0.5
-img_size = 224
+img_size = 512

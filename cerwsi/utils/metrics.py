@@ -37,6 +37,8 @@ def print_confusion_matrix(cm):
     result_table.add_row(['sum'] + list(cm_with_sums[2]))
     print(result_table)
 
+    return str(result_table)
+
 class BinaryMetric(BaseMetric):
     '''
     只需预测图片阴阳的概率
@@ -124,10 +126,10 @@ class MyMultiTokenMetric(MultiLabelMetric):
         bs = bs_img_gt.shape[0]
         self.num_classes = data_samples['pos_probs'].shape[-1] + 1
         for bidx in range(bs):
-            gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
+            gt_multi_label = torch.nonzero(data_samples['multi_pos_labels'][bidx], as_tuple=True)[0]
+            gt_multi_label = [i+1 for i in gt_multi_label]
             if len(gt_multi_label) == 0:
                 gt_multi_label = [0]
-            
             confidence_pred = (data_samples['pos_probs'][bidx] > thr).int()
             # if sum(confidence_pred) > 0 or bs_img_pred[bidx] == 1:
             if bs_img_pred[bidx] == 1:

@@ -39,7 +39,7 @@ class ClsDataset(Dataset):
         # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
         multi_pos_labels = torch.zeros((self.num_classes-1,))
         if 'gtmap_14' in imginfo:
-            label_list = list(set([tk[-1] -1 for tk in imginfo['gtmap_14']]))
+            label_list = list(set([tk[-1]-1 for tk in imginfo['gtmap_14']]))
         else:
             label_list = list(set([i-1 for i in imginfo['clsid']]))
         multi_pos_labels[label_list] = 1

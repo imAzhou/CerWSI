@@ -1,9 +1,13 @@
+_base_ = [
+    './backbone_cfg.py',
+]
+
+# backbone
 backbone_type = 'uni'
+backbone_cfg = _base_.backbone_cfgdict[backbone_type]
+
+# neck
 neck_type = 'identity'
+
+# classifier
 classifier_type = 'wscer_mlc'
-
-backbone_output_dim = [1024]
-backbone_ckpt = 'checkpoints/uni.bin'
-
-use_peft = 'FourierFT'   # None, lora, FourierFT
-num_patches = 196

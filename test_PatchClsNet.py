@@ -6,10 +6,8 @@ from mmengine.dist import collect_results
 import argparse
 from mmengine.config import Config
 from cerwsi.datasets import load_data
-# from cerwsi.nets import MultiPatchUNI
-from cerwsi.nets import CerMCNet
-from cerwsi.utils import MyMultiTokenMetric,MultiPosMetric
-from cerwsi.utils import set_seed, init_distributed_mode, build_evaluator,is_main_process
+from cerwsi.nets import PatchClsNet
+from cerwsi.utils import set_seed, init_distributed_mode, is_main_process
 import json
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -54,10 +52,8 @@ def draw_pred(img_item):
     draw_OD(img, f'{args.save_dir}/FN/{filename}', square_coords, inside_items, category_colors)
 
 
-def test_net(cfg, model):
+def test_net(cfg, model, model_without_ddp):
     trainloader,valloader = load_data(cfg)
-    evaluator = build_evaluator([MyMultiTokenMetric(thr=POSITIVE_THR)])
-    # evaluator = build_evaluator([MultiPosMetric(thr=POSITIVE_THR)])
 
     model.eval()
     pbar = valloader
@@ -68,8 +64,8 @@ def test_net(cfg, model):
     for idx, data_batch in enumerate(pbar):
         with torch.no_grad():
             outputs = model(data_batch, 'val')
+        model_without_ddp.classifier.evaluator.process(data_samples=[outputs], data_batch=None)
         
-        evaluator.process(data_samples=[outputs], data_batch=None)
         for bidx in range(len(outputs['img_probs'])):
             pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
             pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
@@ -78,21 +74,21 @@ def test_net(cfg, model):
             else:
                 pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
             
-            pos_gt = [0]
-            if len(outputs['token_labels'][bidx]) > 0:
-                pos_gt = list(set([tk[-1] for tk in outputs['token_labels'][bidx]]))
+            gt_multi_label = torch.nonzero(outputs['multi_pos_labels'][bidx], as_tuple=True)[0]
+            gt_multi_label = [i.item()+1 for i in gt_multi_label]
+            if len(gt_multi_label) == 0:
+                gt_multi_label = [0]
             result = dict(
                 img_path = outputs['image_paths'][bidx],
                 gt_label = outputs['image_labels'][bidx].item(),
                 pred_label = pred_label,
                 pred_score = outputs['img_probs'][bidx].item(),
-                token_labels = outputs['token_labels'][bidx],
-                pos_gt = pos_gt,
+                pos_gt = gt_multi_label,
                 pos_pred = pred_multi_label
             )
             predict_rsults.append(result)
     
-    metrics = evaluator.evaluate(len(valloader.dataset))   
+    metrics = model_without_ddp.classifier.evaluator.evaluate(len(valloader.dataset))
     results = collect_results(predict_rsults, len(valloader.dataset))
     if is_main_process():
         pbar.close()
@@ -145,12 +141,7 @@ def main():
 
     cfg = Config.fromfile(args.config_file)
     
-    model = CerMCNet(
-        num_classes = cfg['num_classes'], 
-        backbone_type = cfg.backbone_type,
-        use_lora=cfg.use_lora,
-        img_size = cfg.img_size
-    ).to(device)
+    model = PatchClsNet(cfg).to(device)
     model_without_ddp = model
 
     if args.distributed:
@@ -158,7 +149,7 @@ def main():
         model_without_ddp = model.module
     
     model_without_ddp.load_ckpt(args.ckpt)
-    test_net(cfg, model)
+    test_net(cfg, model, model_without_ddp)
 
     if args.distributed:
         dist.destroy_process_group()
@@ -168,8 +159,8 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 scripts/analyze/test_multilabel.py \
-    log/l_cerscan/2025_03_12_16_31_26/config.py \
-    log/l_cerscan/2025_03_12_16_31_26/checkpoints/best.pth \
-    log/l_cerscan/2025_03_12_16_31_26
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 torchrun  --nproc_per_node=7 --master_port=12340 test_multilabel.py \
+    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/config.py \
+    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/checkpoints/best.pth \
+    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39
 '''

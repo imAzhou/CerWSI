@@ -44,7 +44,7 @@ def train_net(cfg, model, model_without_ddp):
             pbar = tqdm(trainloader, ncols=80)
         
         for idx, data_batch in enumerate(pbar):
-            # if idx > 10:
+            # if idx > 5:
             #     break
             loss = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)

@@ -11,5 +11,5 @@ neck_type = 'identity'
 
 # classifier
 classifier_type = 'chief'
-size_type = 'small'
+size_type = 'small'     # small: 768,   big: 1024,   large: 2048
 dropout = True

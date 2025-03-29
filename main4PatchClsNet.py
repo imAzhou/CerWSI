@@ -126,9 +126,9 @@ if __name__ == '__main__':
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/l_cerscanv2_dataset.py \
-    configs/model/wscernet.py \
+    configs/model/chief.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscan_v2/wscernet
+    --record_save_dir log/l_cerscan_v2/chief
 
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
     configs/dataset/cdetector_dataset.py \

@@ -7,7 +7,8 @@ backbone_type = 'sam'
 backbone_cfg = _base_.backbone_cfgdict[backbone_type]
 
 # neck
-neck_type = 'identity'
+neck_type = 'conv'  # identity, conv
+neck_output_dim = [512]
 
 # classifier
 classifier_type = 'chief'

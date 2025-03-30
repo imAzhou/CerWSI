@@ -17,6 +17,8 @@ class PatchClsNet(nn.Module):
         frozen_backbone = cfg.backbone_cfg['frozen_backbone']
         use_peft = cfg.backbone_cfg['use_peft']
         self.backbone_nograd = frozen_backbone and use_peft is None
+
+        self.split_group = cfg.split_group
         
     @property
     def device(self):
@@ -32,14 +34,27 @@ class PatchClsNet(nn.Module):
         if mode == 'val':
             return self.val_step(data_batch)
     
-    def train_step(self, databatch, optim_wrapper: OptimWrapper):
-        input_x = databatch['images']   # (bs, c, h, w)
+    def extract_feature(self, input_x):
+        bs, c, h, w = input_x.shape
+        split_size = bs // self.split_group  # 计算每个子批次的大小
+        features = []
         if self.backbone_nograd:
             self.backbone.eval()
             with torch.no_grad():
-                feature_emb = self.backbone(input_x.to(self.device))
+                for split_x in torch.split(input_x, split_size, dim=0):
+                    split_x = split_x.to(self.device)
+                    features.append(self.backbone(split_x))
         else:
-            feature_emb = self.backbone(input_x.to(self.device))
+            for split_x in torch.split(input_x, split_size, dim=0):
+                split_x = split_x.to(self.device)
+                features.append(self.backbone(split_x))
+
+        feature_emb = torch.cat(features, dim=0)  # 重新拼接回完整批次
+        return feature_emb
+
+    def train_step(self, databatch, optim_wrapper: OptimWrapper):
+        input_x = databatch['images']   # (bs, c, h, w)
+        feature_emb = self.extract_feature(input_x)
         feature_emb = self.neck(feature_emb)
         loss = self.classifier.calc_loss(feature_emb, databatch)
         optim_wrapper.update_params(loss)
@@ -47,7 +62,7 @@ class PatchClsNet(nn.Module):
 
     def val_step(self, databatch):
         input_x = databatch['images']
-        feature_emb = self.backbone(input_x.to(self.device))
+        feature_emb = self.extract_feature(input_x)
         feature_emb = self.neck(feature_emb)
         databatch = self.classifier.set_pred(feature_emb, databatch)
         return databatch

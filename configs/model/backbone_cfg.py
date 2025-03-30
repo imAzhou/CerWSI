@@ -12,7 +12,7 @@ SAMCONFIG = dict(
     backbone_ckpt = 'checkpoints/sam_vit_b_01ec64.pth',
     backbone_size_type = 'vit_b',
     frozen_backbone = True,
-    use_peft = 'lora',   # None, lora, FourierFT
+    use_peft = None,   # None, lora, FourierFT
     num_patches = 64*64,
 )
 

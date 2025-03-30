@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
+import math
 
 class LayerNorm2d(nn.Module):
     def __init__(self, num_channels: int, eps: float = 1e-6) -> None:
@@ -23,8 +23,8 @@ class ConvNeck(nn.Module):
         super(ConvNeck, self).__init__()
 
         input_dim = args.backbone_cfg['backbone_output_dim'][0]
-        out_chans = args.neck_output_dim
-        self.module = nn.Sequential(
+        out_chans = args.neck_output_dim[0]
+        self.conv_module = nn.Sequential(
             nn.Conv2d(
                 input_dim,
                 out_chans,
@@ -44,5 +44,17 @@ class ConvNeck(nn.Module):
 
         
     def forward(self, feature_emb: torch.Tensor):
-        return self.module(feature_emb)
+        '''
+        Args:
+            feature_emb: (bs, L, input_dim)
+        Return:
+            feature_emb: (bs, L, out_chans)
+        '''
+        # feature_emb: (bs, L, input_dim)
+        bs, L, input_dim = feature_emb.shape
+        H = W = int(math.sqrt(L))
+        feature_emb = feature_emb.reshape(bs, input_dim, H, W)  # (bs, input_dim, H, W)
+        feature_emb = self.conv_module(feature_emb)  # (bs, out_chans, H, W)
+        feature_emb = feature_emb.reshape(bs, L, -1)  # 变回 (bs, L, out_chans)
+        return feature_emb
     

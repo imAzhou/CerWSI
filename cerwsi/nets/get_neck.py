@@ -1,6 +1,6 @@
 from mmpretrain.models.necks import GlobalAveragePooling
 import torch.nn as nn
-from .conv_neck import ConvNeck
+from .neck.conv_neck import ConvNeck
 
 allowed_neck_type = ['avg', 'identity', 'conv']
 

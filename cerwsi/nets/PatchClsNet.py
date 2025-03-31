@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 
 from mmengine.optim import OptimWrapper
-from .backbone import get_backbone
-from .neck import get_neck
-from .classifier import get_classifier
+from .get_backbone import get_backbone
+from .get_neck import get_neck
+from .get_classifier import get_classifier
 
 class PatchClsNet(nn.Module):
     def __init__(self, cfg):

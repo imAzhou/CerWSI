@@ -1,11 +1,11 @@
-from .resnet import ResNet
-from .convnext import ConvNeXt
-from .vit import ViT
-from .dinov2 import DINOV2
-from .uni import UNI
-from .ctranspath import CTransPath
-from .SVT_backbone import SVTBackbone
-from .SAM_backbone import SAMEncoder
+from .backbone.resnet import ResNet
+from .backbone.convnext import ConvNeXt
+from .backbone.vit import ViT
+from .backbone.dinov2 import DINOV2
+from .backbone.uni import UNI
+from .backbone.ctranspath import CTransPath
+from .backbone.SVT_backbone import SVTBackbone
+from .backbone.SAM_backbone import SAMEncoder
 
 allowed_backbone_type = ['resnet', 'convnext', 'vit', 
                          'dinov2', 'uni', 'ctranspath', 'svt', 'sam']

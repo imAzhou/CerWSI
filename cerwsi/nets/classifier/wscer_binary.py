@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from typing import Tuple, Type
 from .feat_pe import get_feat_pe
 from .meta_classifier import MetaClassifier
-from cerwsi.utils import build_evaluator, MyMultiTokenMetric
+from cerwsi.utils import build_evaluator,BinaryMetric
 
 class MLPBlock(nn.Module):
     def __init__(
@@ -167,33 +167,23 @@ class Attention(nn.Module):
 
 class WSCerBinary(MetaClassifier):
     def __init__(self, args):
-        input_embed_dim = args.backbone_cfg['backbone_output_dim'][0]
-        num_patches = args.backbone_cfg['num_patches']
-
-        num_classes = args.num_classes
-        evaluator = build_evaluator([MyMultiTokenMetric(thr = args.positive_thr)])
+        input_dim = args.neck_output_dim[0]
+        evaluator = build_evaluator([BinaryMetric(thr = args.positive_thr)])
         super(WSCerBinary, self).__init__(evaluator, **args)
 
         depth = 2
-        proj_dim_1 = 512
         num_heads = 8
         mlp_dim = 2048
         use_self_attn = False
         self.pos_add_type = 'sam' # 'sam','query2label',None
         self.num_classes = 1
         
-        self.proj_1 = nn.Sequential(
-            nn.Linear(input_embed_dim, proj_dim_1),
-            nn.ReLU(),
-            nn.Dropout(0.25)
-        )
-        
-        self.cls_tokens = nn.Embedding(1, proj_dim_1)
+        self.cls_tokens = nn.Embedding(1, input_dim)
         self.layers = nn.ModuleList()
         for i in range(depth):
             self.layers.append(
                 TwoWayAttentionBlock(
-                    embedding_dim=proj_dim_1,
+                    embedding_dim=input_dim,
                     num_heads=num_heads,
                     mlp_dim=mlp_dim,
                     activation=nn.ReLU,
@@ -202,13 +192,11 @@ class WSCerBinary(MetaClassifier):
                     use_self_attn = use_self_attn
                 )
             )
-        self.cls_neg_head = nn.Linear(proj_dim_1, 1)
+        self.cls_neg_head = nn.Linear(input_dim, 1)
         
 
     def calc_logits(self, img_tokens: torch.Tensor):
-        keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
-
-        bs, num_tokens, embed_dim = keys_1.shape
+        bs, num_tokens, embed_dim = img_tokens.shape
         feat_size = int(math.sqrt(num_tokens))
         queries = self.cls_tokens.weight.unsqueeze(0).expand(bs, -1, -1)
         key_pe = None
@@ -218,16 +206,16 @@ class WSCerBinary(MetaClassifier):
             key_pe = key_pe.flatten(2).permute(0, 2, 1).to(self.device)
 
         for layer in self.layers:
-            queries, keys_1 = layer(
+            queries, img_tokens = layer(
                 queries=queries,
-                keys=keys_1,
+                keys=img_tokens,
                 key_pe=key_pe,
             )
 
         cls_pn_token = queries[:,0,:]  # (bs, C)
         pred_pn_logits = self.cls_neg_head(cls_pn_token)  # (bs, 1)
         
-        return pred_pn_logits, None
+        return pred_pn_logits
     
     def calc_pos_loss(self, pos_logits, databatch):
         loss_fn = nn.BCEWithLogitsLoss()
@@ -237,7 +225,6 @@ class WSCerBinary(MetaClassifier):
     
     def calc_loss(self,feature_emb, databatch):
         img_pn_logit = self.calc_logits(feature_emb)
-
         img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
         loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
         return loss

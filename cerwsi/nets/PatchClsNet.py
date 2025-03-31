@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 
 from mmengine.optim import OptimWrapper
-from .backbone import get_backbone
-from .neck import get_neck
-from .classifier import get_classifier
+from .get_backbone import get_backbone
+from .get_neck import get_neck
+from .get_classifier import get_classifier
 
 class PatchClsNet(nn.Module):
     def __init__(self, cfg):
@@ -35,17 +35,15 @@ class PatchClsNet(nn.Module):
             return self.val_step(data_batch)
     
     def extract_feature(self, input_x):
-        bs, c, h, w = input_x.shape
-        split_size = bs // self.split_group  # 计算每个子批次的大小
         features = []
         if self.backbone_nograd:
             self.backbone.eval()
             with torch.no_grad():
-                for split_x in torch.split(input_x, split_size, dim=0):
+                for split_x in torch.chunk(input_x, self.split_group, dim=0):
                     split_x = split_x.to(self.device)
                     features.append(self.backbone(split_x))
         else:
-            for split_x in torch.split(input_x, split_size, dim=0):
+            for split_x in torch.chunk(input_x, self.split_group, dim=0):
                 split_x = split_x.to(self.device)
                 features.append(self.backbone(split_x))
 

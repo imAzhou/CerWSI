@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from typing import Tuple, Type
 from .feat_pe import get_feat_pe
 from .meta_classifier import MetaClassifier
-from cerwsi.utils import build_evaluator, MyMultiTokenMetric
+from cerwsi.utils import build_evaluator,TokenMetric
 
 class MLPBlock(nn.Module):
     def __init__(
@@ -152,14 +152,12 @@ class Attention(nn.Module):
         return out, attn_
 
 
-class WSCerMLC(MetaClassifier):
+class WSCerPartial(MetaClassifier):
     def __init__(self, args):
-        input_embed_dim = args.backbone_cfg['backbone_output_dim'][0]
-        num_patches = args.backbone_cfg['num_patches']
-
+        input_embed_dim = args.neck_output_dim[0]
         num_classes = args.num_classes
-        evaluator = build_evaluator([MyMultiTokenMetric(thr = args.positive_thr)])
-        super(WSCerMLC, self).__init__(evaluator, **args)
+        evaluator = build_evaluator([TokenMetric()])
+        super(WSCerPartial, self).__init__(evaluator, **args)
 
         depth = 2
         num_heads = 8
@@ -167,6 +165,7 @@ class WSCerMLC(MetaClassifier):
         self.pos_add_type = 'sam' # 'sam','query2label',None
         self.num_classes = num_classes
 
+        self.conv_fc = nn.Linear(input_embed_dim, 1)
         self.cls_tokens = nn.Embedding(num_classes, input_embed_dim)
         self.layers = nn.ModuleList()
         for i in range(depth):
@@ -180,12 +179,9 @@ class WSCerMLC(MetaClassifier):
                     skip_first_layer_pe=(i == 0),
                 )
             )
-        
 
     def calc_logits(self, img_tokens: torch.Tensor):
-        keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
-
-        bs, num_tokens, embed_dim = keys_1.shape
+        bs, num_tokens, embed_dim = img_tokens.shape
         feat_size = int(math.sqrt(num_tokens))
         queries = self.cls_tokens.weight.unsqueeze(0).expand(bs, -1, -1)
         key_pe = None
@@ -194,64 +190,73 @@ class WSCerMLC(MetaClassifier):
             key_pe = get_feat_pe(self.pos_add_type, embed_dim, (feat_size,feat_size))
             key_pe = key_pe.flatten(2).permute(0, 2, 1).to(self.device)
 
+        feat_logits = self.conv_fc(img_tokens)  # (bs, num_tokens, 1)
+
         attn_array = []
         for layer in self.layers:
-            queries, keys_1, attn_out_q = layer(
+            queries, img_tokens, attn_out_q = layer(
                 queries=queries,
-                keys=keys_1,
+                keys=img_tokens,
                 key_pe=key_pe,
             )
             # attn_out_q: (bs, num_heads, num_cls, L)
             # attn_score: (bs, num_cls, L)
             attn_score = torch.mean(attn_out_q, dim=1)
             attn_array.append(attn_score)
-        # out = self.fc(queries)   # (bs, n_cls, 1)
-        # attn_map = None
-
-        # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        # keys_1 = keys_1 + key_pe
-        attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
+        
+        # queries: (bs, n_cls, dim), img_tokens: (bs, num_tokens, dim)
+        attn_map = torch.bmm(img_tokens, queries.transpose(1, 2))   # (bs, num_tokens, n_cls)
         # attn_map = attn_map / math.sqrt(embed_dim)
-        attn_array.append(attn_map)
+        attn_array.append(attn_map.transpose(1, 2))
         attn_array = torch.stack(attn_array, dim=1)
-        # attn_map = F.softmax(attn_map, dim=-1)
-        # attn_map = (attn_map - attn_map.mean(-1, keepdim=True)) / (attn_map.std(-1, keepdim=True) + 1e-8)
-        
-        avg_token = torch.mean(attn_map, dim=-1)
-        cls_pn_token = queries[:,0,:]  # (bs, C)
-        overall_neg_token = torch.cat([cls_pn_token, avg_token], dim=-1 )
-        pred_pn_logits = self.cls_neg_head(overall_neg_token)  # (bs, 1)
-
-        pred_pos_logits = []
-        for i in range(self.num_classes-1):
-            pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i+1,:]))  # [(bs, 1),]
-        pred_pos_logits = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
-        out = torch.cat([pred_pn_logits, pred_pos_logits], dim=-1)   # (bs, n_cls)
-        
-        return out, attn_array
+        return feat_logits, attn_map, attn_array
     
-    def calc_pos_loss(self, pos_logits, databatch):
-        loss_fn = nn.BCEWithLogitsLoss()
-        binary_matrix = databatch['multi_pos_labels'].to(self.device)
-        loss = loss_fn(pos_logits, binary_matrix)
-        return loss
+    
+    def create_feat_gt(self, logits_shape, image_labels, clsid_mask):
+        bs,num_tokens,_ = logits_shape
+        # drop_neg_ratio = 0.1
+        # keep_neg_nums = int(num_tokens*drop_neg_ratio)
+        keep_neg_nums = 100
+        feat_gt = torch.zeros((bs, num_tokens)).to(self.device)
+        balanced_mask = torch.zeros((bs, num_tokens)).to(self.device)
+        for img_label,cmask,bidx in zip(image_labels,clsid_mask,range(bs)):
+            if img_label == 0:
+                rand_keep = torch.randint(0, num_tokens, (keep_neg_nums,))
+                balanced_mask[bidx, rand_keep] = 1
+            else:
+                feat_gt[bidx, cmask>0] = 1
+                balanced_mask[bidx, cmask>0] = 1
+
+        return feat_gt,balanced_mask
     
     def calc_loss(self,feature_emb, databatch):
-        pred_logits,_ = self.calc_logits(feature_emb)
-        img_pn_logit = pred_logits[:, 0].unsqueeze(1)
-        positive_logits = pred_logits[:, 1:]
-        img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
-        pn_loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
-        pos_loss = self.calc_pos_loss(positive_logits, databatch)
-        loss = pn_loss + pos_loss
+        loss_fn_1 = nn.BCEWithLogitsLoss(reduction='none')
+        loss_fn_2 = nn.CrossEntropyLoss(reduction='none')
+
+        feat_logits, attn_map, _ = self.calc_logits(feature_emb)
+        bs, num_tokens, _ = feat_logits.shape
+        feat_size = int(math.sqrt(num_tokens))
+        clsid_mask = F.interpolate(databatch['clsid_mask'].unsqueeze(1).float(), size=(feat_size,feat_size), mode='nearest')
+        clsid_mask = clsid_mask.flatten(1).long().to(self.device)    # (bs, num_tokens)
+        
+        feat_gt,balanced_mask = self.create_feat_gt(feat_logits.shape, databatch['image_labels'], clsid_mask)
+        loss_per_token = loss_fn_1(feat_logits.view(bs * num_tokens), feat_gt.view(bs * num_tokens))
+        loss_per_token = loss_per_token.view(bs, num_tokens)
+        feat_loss = loss_per_token * balanced_mask
+        feat_loss = feat_loss.sum() / balanced_mask.sum().float()
+
+        cls_loss = loss_fn_2(attn_map.permute(0, 2, 1), clsid_mask)
+        cls_loss = cls_loss * balanced_mask
+        cls_loss = cls_loss.sum() / balanced_mask.sum().float()
+        loss = feat_loss + cls_loss
         return loss
 
     def set_pred(self,feature_emb, databatch):
-        pred_logits,attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
-        img_pn_logit = pred_logits[:, 0]
-        positive_logits = pred_logits[:, 1:]
-
-        databatch['img_probs'] = torch.sigmoid(img_pn_logit).squeeze(-1)   # (bs, )
-        databatch['pos_probs'] = torch.sigmoid(positive_logits) # (bs, num_classes-1)
-        databatch['attn_array'] = attn_array # (bs, num_classes, num_tokens)
+        feat_logits,attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
+        attn_map = F.softmax(attn_map, dim=-1)  # (bs, num_tokens, n_cls)
+        # max_probs 的 shape 是 (bs, num_tokens)，即每个位置的预测概率
+        # predicted_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引
+        max_probs, predicted_classes = torch.max(attn_map, dim=-1)
+        databatch['token_probs'] = max_probs   # (bs, num_tokens)
+        databatch['token_classes'] = predicted_classes # (bs, num_tokens)
         return databatch

@@ -11,4 +11,4 @@ neck_type = 'conv'
 neck_output_dim = [512]
 
 # classifier
-classifier_type = 'wscer_binary'
+classifier_type = 'wscer_partial'

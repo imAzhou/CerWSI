@@ -53,8 +53,8 @@ class ConvNeck(nn.Module):
         # feature_emb: (bs, L, input_dim)
         bs, L, input_dim = feature_emb.shape
         H = W = int(math.sqrt(L))
-        feature_emb = feature_emb.reshape(bs, input_dim, H, W)  # (bs, input_dim, H, W)
+        feature_emb = feature_emb.permute(0, 2, 1).contiguous().view(bs, input_dim, H, W) # (bs, input_dim, H, W)
         feature_emb = self.conv_module(feature_emb)  # (bs, out_chans, H, W)
-        feature_emb = feature_emb.reshape(bs, L, -1)  # 变回 (bs, L, out_chans)
+        feature_emb = feature_emb.flatten(2).permute(0, 2, 1).contiguous()  # 变回 (bs, L, out_chans)
         return feature_emb
     

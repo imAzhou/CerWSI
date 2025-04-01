@@ -1,1 +1,0 @@
-from .get_neck import get_neck

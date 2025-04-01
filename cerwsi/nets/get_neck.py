@@ -1,7 +1,8 @@
 from mmpretrain.models.necks import GlobalAveragePooling
 import torch.nn as nn
+from .neck.conv_neck import ConvNeck
 
-allowed_neck_type = ['avg', 'identity']
+allowed_neck_type = ['avg', 'identity', 'conv']
 
 def get_neck(args):
     neck_type = args.neck_type
@@ -12,5 +13,7 @@ def get_neck(args):
         neck = GlobalAveragePooling()
     if neck_type == 'identity':
         neck = nn.Identity()
+    if neck_type == 'conv':
+        neck = ConvNeck(args)
     
     return neck

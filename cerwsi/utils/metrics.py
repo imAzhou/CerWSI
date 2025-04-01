@@ -326,3 +326,59 @@ class MultiPosMetric(MultiLabelMetric):
         
         return result_metrics
 
+class TokenMetric(BaseMetric):
+    '''
+    预测每个token的类别属于多类别中的某一个
+    '''
+    def __init__(self) -> None:
+        super(TokenMetric, self).__init__()
+
+    def process(self, data_batch, data_samples):
+        """Process one batch of data samples.
+
+        The processed results should be stored in ``self.results``, which will
+        be used to computed the metrics when all batches have been processed.
+
+        Args:
+            data_batch: A batch of data from the dataloader.
+            data_samples (Sequence[dict]): A batch of outputs from the model.
+        """
+        data_samples = data_samples[0]
+        bs_img_gt = data_samples['image_labels']
+        # 取预测的类别最大值
+        bs_pred_cls = torch.max(data_samples['token_classes'], dim=-1)[0]
+        bs_img_pred = (bs_pred_cls > 0).int()
+        bs = bs_img_gt.shape[0]
+
+        for bidx in range(bs):
+            result = dict(
+                img_gt = bs_img_gt[bidx],
+                img_pred = bs_img_pred[bidx]
+            )
+
+            # Save the result to `self.results`.
+            self.results.append(result)
+
+    def compute_metrics(self, results):
+        """Compute the metrics from processed results.
+
+        Args:
+            results (list): The processed results of each batch.
+
+        Returns:
+            Dict: The computed metrics. The keys are the names of the metrics,
+            and the values are corresponding results.
+        """
+        # NOTICE: don't access `self.results` from the method. `self.results`
+        # are a list of results from multiple batch, while the input `results`
+        # are the collected results.
+        result_metrics = dict()
+
+        img_gt = [rs['img_gt'] for rs in results]
+        img_pred = [rs['img_pred'] for rs in results]
+        img_result = calculate_metrics(img_gt,img_pred)
+        for k,v in img_result.items():
+            if k != 'cm':
+                result_metrics['img_'+k] = v
+        
+        return result_metrics

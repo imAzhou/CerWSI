@@ -3,13 +3,14 @@ _base_ = [
 ]
 
 # backbone
-backbone_type = 'uni'
+backbone_type = 'resnet'
 backbone_cfg = _base_.backbone_cfgdict[backbone_type]
 
 # neck
-neck_type = 'identity'
+neck_type = 'conv'  # identity, conv
+neck_output_dim = [768]
 
 # classifier
 classifier_type = 'chief'
-size_type = 'big'
+size_type = 'small'     # small: 768,   big: 1024,   large: 2048
 dropout = True

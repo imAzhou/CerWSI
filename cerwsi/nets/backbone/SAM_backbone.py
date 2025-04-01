@@ -2,6 +2,7 @@ import torch
 from peft import LoraConfig, FourierFTConfig, get_peft_model
 from functools import partial
 from types import SimpleNamespace
+from torch.nn import functional as F
 from .SAM.image_encoder import ImageEncoderViT
 
 from .meta_backbone import MetaBackbone
@@ -51,10 +52,14 @@ class SAMEncoder(MetaBackbone):
     def __init__(self, args):
         super(SAMEncoder, self).__init__(args)
         image_size = args.img_size
+        backbone_ckpt = args.backbone_cfg['backbone_ckpt']
+        use_peft = args.backbone_cfg['use_peft']
+        frozen_backbone = args.backbone_cfg['frozen_backbone']
+        backbone_size_type = args.backbone_cfg['backbone_size_type']
+
         vit_patch_size = 16
         out_chans = 256
-        image_embedding_size = image_size // vit_patch_size
-        encoder_cfg = get_backbone_config(args.backbone_size_type)
+        encoder_cfg = get_backbone_config(backbone_size_type)
         encoder_cfg = SimpleNamespace(**encoder_cfg)
         self.backbone = ImageEncoderViT(
             depth=encoder_cfg.encoder_depth,
@@ -70,14 +75,15 @@ class SAMEncoder(MetaBackbone):
             window_size=14,
             out_chans=out_chans,
         )
-        if args.backbone_ckpt is not None:
-            self.load_backbone(args.backbone_ckpt)
+        self.token_size = int(image_size // vit_patch_size)
+        if backbone_ckpt is not None:
+            self.load_backbone(backbone_ckpt)
 
-        if args.frozen_backbone:
+        if frozen_backbone:
             self.freeze_backbone()
 
-        if args.use_peft is not None:
-            self.peft_config = get_peft_config(args.use_peft)
+        if use_peft is not None:
+            self.peft_config = get_peft_config(use_peft)
             self.backbone = get_peft_model(self.backbone, self.peft_config).base_model
 
     def load_backbone(self, ckpt):
@@ -87,8 +93,29 @@ class SAMEncoder(MetaBackbone):
             if 'image_encoder' in key:
                 new_name = key.replace('image_encoder.', '')
                 state_dict[new_name] = value
+        
+        if state_dict['pos_embed'].shape[1] != self.token_size:
+            state_dict = self.resize_posemb(state_dict)
+        
         load_result = self.backbone.load_state_dict(state_dict, strict=False)
         print('Load backbone SAM: ' + str(load_result))
+
+    def resize_posemb(self, state_dict):
+        pos_embed = state_dict['pos_embed']
+        pos_embed = pos_embed.permute(0, 3, 1, 2)  # [b, c, h, w]
+        pos_embed = F.interpolate(pos_embed, (self.token_size, self.token_size), mode='bilinear', align_corners=False)
+        pos_embed = pos_embed.permute(0, 2, 3, 1)  # [b, h, w, c]
+        state_dict['pos_embed'] = pos_embed
+        rel_pos_keys = [k for k in state_dict.keys() if 'rel_pos' in k]
+        global_rel_pos_keys = [k for k in rel_pos_keys if '2' in k or '5' in  k or '8' in k or '11' in k]
+        for k in global_rel_pos_keys:
+            rel_pos_params = state_dict[k]
+            h, w = rel_pos_params.shape
+            rel_pos_params = rel_pos_params.unsqueeze(0).unsqueeze(0)
+            rel_pos_params = F.interpolate(rel_pos_params, (self.token_size * 2 - 1, w), mode='bilinear', align_corners=False)
+            state_dict[k] = rel_pos_params[0, 0, ...]
+            
+        return state_dict
 
     def freeze_backbone(self):
         '''frozen the backbone params'''
@@ -100,8 +127,3 @@ class SAMEncoder(MetaBackbone):
         # (-1, h=64, w=64, c=1280)
         output = inter_feature[-1].flatten(start_dim=1, end_dim=2)  # (bs, num_tokens, C)
         return output
-
-    
-    
-    
-    

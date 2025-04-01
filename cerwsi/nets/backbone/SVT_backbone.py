@@ -7,7 +7,6 @@ from timm.layers import DropPath, trunc_normal_
 from .meta_backbone import MetaBackbone
 from pytorch_wavelets import DTCWTForward, DTCWTInverse
 
-
 class Stem(nn.Module):
     def __init__(self, in_channels, stem_hidden_dim, out_channels):
         super().__init__()
@@ -273,7 +272,7 @@ class Block(nn.Module):
         if block_type == 'std_att':
             self.attn = Attention(dim, num_heads)
         else:
-            self.attn = SVT_channel_mixing (dim)
+            self.attn = SVT_channel_mixing(dim)
             # self.attn = SVT_token_mixing (dim)
             # self.attn = SVT_channel_token_mixing (dim)
         self.mlp = PVT2FFN(in_features=dim, hidden_features=int(dim * mlp_ratio))

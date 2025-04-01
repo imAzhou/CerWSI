@@ -1,6 +1,10 @@
+from cerwsi.nets.backbone.SVT_backbone import SVTBackbone
 import torch
-import torch.nn as nn
 
-input = torch.randn((6,64,64,768))
-fl_input = input.flatten(start_dim=1,end_dim=2)
-print(fl_input.shape)
+model = SVTBackbone(None)
+# with open('model_structure/SVT.txt', 'w') as f:
+#     f.writelines(str(model))
+bs,c,h,w = 6,3,224,224
+input = torch.randn((bs,c,h,w))
+output = model(input)
+print()

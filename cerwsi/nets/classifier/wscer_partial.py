@@ -164,6 +164,7 @@ class WSCerPartial(MetaClassifier):
         mlp_dim = 2048
         self.pos_add_type = 'sam' # 'sam','query2label',None
         self.num_classes = num_classes
+        self.token_sample_num = 100
 
         self.conv_fc = nn.Linear(input_embed_dim, 1)
         self.cls_tokens = nn.Embedding(num_classes, input_embed_dim)
@@ -211,21 +212,45 @@ class WSCerPartial(MetaClassifier):
         attn_array = torch.stack(attn_array, dim=1)
         return feat_logits, attn_map, attn_array
     
-    
     def create_feat_gt(self, logits_shape, image_labels, clsid_mask):
         bs,num_tokens,_ = logits_shape
-        # drop_neg_ratio = 0.1
-        # keep_neg_nums = int(num_tokens*drop_neg_ratio)
-        keep_neg_nums = 100
         feat_gt = torch.zeros((bs, num_tokens)).to(self.device)
         balanced_mask = torch.zeros((bs, num_tokens)).to(self.device)
+        pos_tokens_nums = torch.sum(clsid_mask > 0).item()  # mini batch 中的阳性 token 数量
+        neg_tokens_nums = pos_tokens_nums*2 # 负样本数目是阳性样本的两倍
+        max_chosen_num = 4096
+
+        if pos_tokens_nums == 0:
+            neg_tokens_nums = max_chosen_num
+        neg_img_samples = torch.sum(image_labels == 0).item()  # 负样本图像的数量
+        assert not (pos_tokens_nums == 0 and neg_img_samples == 0), 'Not allowed with full pos images but no pos tokens.'
+
+        if neg_img_samples > 0:
+            neg_samples_per_img = neg_tokens_nums // neg_img_samples  # 每个图像需要采样的负样本数量
+            remaining_neg_samples = neg_tokens_nums % neg_img_samples  # 处理剩余未分配的负样本数量
         for img_label,cmask,bidx in zip(image_labels,clsid_mask,range(bs)):
             if img_label == 0:
-                rand_keep = torch.randint(0, num_tokens, (keep_neg_nums,))
-                balanced_mask[bidx, rand_keep] = 1
+                keep_neg_nums = neg_samples_per_img
+                # 如果还有剩余的负样本，则随机给某些图像多分配一个负样本
+                if remaining_neg_samples > 0:
+                    keep_neg_nums += 1
+                    remaining_neg_samples -= 1
+                # 确保负样本不重复选择
+                neg_indices = torch.randperm(num_tokens)[:keep_neg_nums]
+                balanced_mask[bidx, neg_indices] = 1
             else:
-                feat_gt[bidx, cmask>0] = 1
-                balanced_mask[bidx, cmask>0] = 1
+                pos_indices = torch.nonzero(cmask > 0, as_tuple=True)[0]  # 获取 cmask > 0 的索引
+                feat_gt[bidx, pos_indices] = 1
+                balanced_mask[bidx, pos_indices] = 1
+        # print(f'pos_tokens_nums:{pos_tokens_nums}, neg_tokens_nums:{neg_tokens_nums}, balanced_mask.sum():{balanced_mask.sum()}')
+        # Ensure balanced_mask.sum() equals 1000, if greater, randomly zero out some entries
+        balanced_mask_sum = balanced_mask.sum()
+        if balanced_mask_sum > max_chosen_num:
+            excess_tokens = (balanced_mask_sum - max_chosen_num).int()
+            balanced_mask_flat = balanced_mask.view(-1)
+            indices_to_zero = torch.randperm(balanced_mask_flat.numel())[:excess_tokens]
+            balanced_mask_flat[indices_to_zero] = 0
+            balanced_mask = balanced_mask_flat.view(bs, num_tokens)
 
         return feat_gt,balanced_mask
     
@@ -244,12 +269,21 @@ class WSCerPartial(MetaClassifier):
         loss_per_token = loss_per_token.view(bs, num_tokens)
         feat_loss = loss_per_token * balanced_mask
         feat_loss = feat_loss.sum() / balanced_mask.sum().float()
+        if torch.isnan(feat_loss).any():
+            print(f"Warning: NaN detected in feat_loss! feat_loss.sum()={feat_loss.sum()}, balanced_mask.sum()={balanced_mask.sum()}")
 
         cls_loss = loss_fn_2(attn_map.permute(0, 2, 1), clsid_mask)
         cls_loss = cls_loss * balanced_mask
         cls_loss = cls_loss.sum() / balanced_mask.sum().float()
+        if torch.isnan(cls_loss).any():
+            print(f"Warning: NaN detected in cls_loss! cls_loss.sum()={cls_loss.sum()}, balanced_mask.sum()={balanced_mask.sum()}")
+
         loss = feat_loss + cls_loss
-        return loss
+        loss_dict = {
+            'feat_loss': feat_loss.item(),
+            'cls_loss': cls_loss.item(),
+        }
+        return loss,loss_dict
 
     def set_pred(self,feature_emb, databatch):
         feat_logits,attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)

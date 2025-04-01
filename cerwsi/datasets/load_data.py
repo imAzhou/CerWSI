@@ -41,6 +41,7 @@ def load_data(cfg):
                             pin_memory=True,
                             batch_size=cfg.train_bs, 
                             sampler = train_sampler,
+                            drop_last=True,
                             collate_fn=custom_collate,
                             num_workers=8)
     val_transform = transforms.Compose([

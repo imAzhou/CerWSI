@@ -44,15 +44,19 @@ def train_net(cfg, model, model_without_ddp):
             pbar = tqdm(trainloader, ncols=80)
         
         for idx, data_batch in enumerate(pbar):
-            # if idx > 2:
-            #     break
-            loss = model(data_batch, 'train', optim_wrapper=optimizer)
+            # if idx == 194:
+            #     print()
+            loss,loss_dict = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
             if is_main_process():
                 pbar.desc = f"average loss: {round(loss.item(), 4)}"
 
             if idx % 50 == 0 and is_main_process():
-                logger.info(f'Train Epoch [{epoch + 1}/{cfg.max_epochs}][{idx}/{len(trainloader)}], LR: {current_lr:.6f}, average loss: {loss.item():.6f}')
+                print_str = f'Train Epoch [{epoch + 1}/{cfg.max_epochs}][{idx}/{len(trainloader)}], LR: {current_lr:.6f}, average loss: {loss.item():.6f}'
+                if len(loss_dict.keys()) > 1:
+                    for k,v in loss_dict.items():
+                        print_str += f', {k}:{v:.6f}'
+                logger.info(print_str)
         if is_main_process():
             pbar.close()
             end_time = time.time()
@@ -63,6 +67,7 @@ def train_net(cfg, model, model_without_ddp):
             print('ETA: ' + "%02d:%02d:%02d" % (h, m, s))
         
         lr_scheduler.step()
+        # if epoch > 1000:
         if (epoch+1) % 10 == 0 or epoch == 0:
             model.eval()
             pbar = valloader
@@ -126,15 +131,15 @@ if __name__ == '__main__':
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12340 main4PatchClsNet.py \
     configs/dataset/l_cerscanv2_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
     --record_save_dir log/l_cerscan_v2/wscer_partial
 
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12342 main4PatchClsNet.py \
-    configs/dataset/l_cerscan_dataset.py \
-    configs/model/chief.py \
+CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 main4PatchClsNet.py \
+    configs/dataset/l_cerscanv2_dataset.py \
+    configs/model/wscer_partial.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscan/chief
+    --record_save_dir log/debug
 '''

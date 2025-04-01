@@ -14,4 +14,5 @@ class ResNet(MetaBackbone):
     def forward(self, x: torch.Tensor):
         # feature_emb.shape: (bs, c, h, w)
         feature_emb = self.module.forward_features(x)
+        feature_emb = feature_emb.flatten(2).permute(0,2,1)
         return feature_emb

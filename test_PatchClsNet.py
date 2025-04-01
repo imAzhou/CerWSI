@@ -159,7 +159,7 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 torchrun  --nproc_per_node=7 --master_port=12340 test_multilabel.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_PatchClsNet.py \
     log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/config.py \
     log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/checkpoints/best.pth \
     log/l_cerscan_v2/wscernet/2025_03_25_11_08_39

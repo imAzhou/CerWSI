@@ -1,3 +1,9 @@
+RESNET = dict(
+    backbone_output_dim = [2048],
+    backbone_ckpt = 'checkpoints/resnet50_a1_0-14fe96d1.pth',
+    frozen_backbone = False,
+    use_peft = None,
+)
 
 UNICONFIG = dict(
     backbone_output_dim = [1024],
@@ -15,6 +21,7 @@ SAMCONFIG = dict(
 )
 
 backbone_cfgdict = {
+    'resnet': RESNET,
     'uni': UNICONFIG,
     'sam': SAMCONFIG,
 }

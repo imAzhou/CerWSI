@@ -75,7 +75,10 @@ class CHIEF(MetaClassifier):
         img_pn_logit = self.calc_logits(feature_emb)
         img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
         pn_loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
-        return pn_loss
+        loss_dict = {
+            'pn_loss': pn_loss.item(),
+        }
+        return pn_loss,loss_dict
 
     def set_pred(self,feature_emb, databatch):
         img_pn_logit = self.calc_logits(feature_emb) # (bs, num_classes-1)

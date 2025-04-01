@@ -17,6 +17,7 @@ class ClsDataset(Dataset):
 
         with open(annojson_path, 'r') as f:
             self.patch_infolist = json.load(f)
+            # self.patch_infolist = self.patch_infolist[:10000]
         
         self.transform = transform
         self.num_classes = len(classes)

@@ -3,7 +3,7 @@ _base_ = [
 ]
 
 # backbone
-backbone_type = 'sam'
+backbone_type = 'resnet'
 backbone_cfg = _base_.backbone_cfgdict[backbone_type]
 
 # neck

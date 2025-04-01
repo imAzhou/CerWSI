@@ -5,6 +5,8 @@ import json
 from PIL import ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import chardet
+import xml.etree.ElementTree as ET
 
 def set_seed(seed):
     # Set random seed for PyTorch
@@ -52,6 +54,37 @@ def is_bbox_inside(bbox1, bbox2, tolerance=0):
             bbox1[2] <= bbox2[2] + tolerance and  # bbox1的右边界可以稍微超出bbox2的右边界
             bbox1[3] <= bbox2[3] + tolerance)     # bbox1的下边界可以稍微超出bbox2的下边界
 
+def overlap_enough(bbox1, bbox2, min_overlap):
+    x1_min, y1_min, x1_max, y1_max = bbox1
+    x2_min, y2_min, x2_max, y2_max = bbox2
+
+    inter_x_min = max(x1_min, x2_min)
+    inter_y_min = max(y1_min, y2_min)
+    inter_x_max = min(x1_max, x2_max)
+    inter_y_max = min(y1_max, y2_max)
+    inter_width = max(0, inter_x_max - inter_x_min)
+    inter_height = max(0, inter_y_max - inter_y_min)
+    return inter_width > min_overlap and inter_height > min_overlap
+
+def calc_relative_coord(parent_bbox, child_bbox, min_overlap=25):
+    relative_bbox = None
+    px1,py1,px2,py2 = parent_bbox
+    cx1,cy1,cx2,cy2 = child_bbox
+    if is_bbox_inside(child_bbox, parent_bbox):
+        relative_bbox = [cx1 - px1, cy1 - py1, cx2 - px1, cy2 - py1]
+    else:
+        # 计算交集区域
+        inter_x_min = max(cx1, px1)
+        inter_y_min = max(cy1, py1)
+        inter_x_max = min(cx2, px2)
+        inter_y_max = min(cy2, py2)
+
+        if inter_x_min < inter_x_max and inter_y_min < inter_y_max:
+            inter_w = inter_x_max - inter_x_min
+            inter_h = inter_y_max - inter_y_min
+            if inter_w > min_overlap and inter_h > min_overlap:
+                relative_bbox = [inter_x_min - px1, inter_y_min - py1, inter_x_max - px1, inter_y_max - py1]
+    return relative_bbox
 
 def random_cut_fn(x1,y1,w,h, cut_num=1):
     if w < 64 or h < 64:
@@ -112,7 +145,7 @@ def random_cut_square(rect, sq_size):
 
 def remap_points(annitem):
     points = annitem['points']
-    if len(points) < 2:
+    if len(points) < 2:     # 判定为是从左上角从右下角绘制的矩形
         return annitem
     p1_x,p1_y = points[0]['x'],points[0]['y']
     p2_x,p2_y = points[1]['x'],points[1]['y']
@@ -127,6 +160,27 @@ def remap_points(annitem):
         return annitem
     
     return None
+
+def decode_xml(xml_path):
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    all_rects = []
+    for region in root.findall('.//Region'):
+        coords = []
+        for vertex in region.findall('.//Vertex'):
+            # 获取 Vertex 节点的 X 和 Y 属性值
+            x = vertex.get('X')
+            y = vertex.get('Y')
+            coords.append((x,y))
+        (start_x,start_y),(end_x, end_y) = coords[0],coords[2]
+        start_x,start_y,end_x,end_y = round(float(start_x)), round(float(start_y)), round(float(end_x)), round(float(end_y))
+        x1,y1 = min(start_x,end_x),min(start_y,end_y)
+        x2,y2 = max(start_x,end_x),max(start_y,end_y)
+
+        w, h = x2 - x1, y2 - y1
+        if w > 32 and h > 32:
+            all_rects.append([x1,y1,x2,y2])
+    return all_rects
 
 def read_json_anno(json_path, encoding='GB2312'):
     def detect_encoding(path):
@@ -197,7 +251,7 @@ def draw_OD(read_image, save_path, square_coords, inside_items, category_colors)
     '''
     square_coords: list|tuple, [x1,y1,w,h]
     inside_items: list[
-        dict(sub_class:str,region:dict(x,y,width,height))]
+        dict(sub_class:str,region:[ x1, y1, x2, y2])]
     category_colors: dict
     '''
     draw = ImageDraw.Draw(read_image)
@@ -205,10 +259,10 @@ def draw_OD(read_image, save_path, square_coords, inside_items, category_colors)
 
     for box_item in inside_items:
         category = box_item.get('sub_class')
-        region = box_item.get('region')
-        x,y = region['x'],region['y']
-        w,h = region['width'],region['height']
-        x1, y1, x2, y2 = x,y,x+w,y+h
+        x1, y1, x2, y2 = box_item.get('region')
+        # x,y = region['x'],region['y']
+        # w,h = region['width'],region['height']
+        # x1, y1, x2, y2 = x,y,x+w,y+h
         x_min = max(sq_x1, x1) - sq_x1
         y_min = max(sq_y1, y1) - sq_y1
         x_max = min(sq_x1+sq_w, x2) - sq_x1

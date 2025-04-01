@@ -10,8 +10,7 @@ import multiprocessing
 from multiprocessing import Pool
 from PIL import Image
 import matplotlib.pyplot as plt
-from cerwsi.utils import (KFBSlide,remap_points,read_json_anno,decode_xml,random_cut_square,
-                          is_bbox_inside,overlap_enough,draw_OD)
+from cerwsi.utils import (KFBSlide,remap_points,read_json_anno,decode_xml,random_cut_square,is_bbox_inside,calc_relative_coord,draw_OD)
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
@@ -61,39 +60,15 @@ def find_matching_bboxes(target_bbox, grid_size = PATCH_EDGE, stride = STRIDE, m
 
     return matching_bboxes
 
-def filter_pos_bbox(annos):
-    all_pos_bbox = []
-    for ann_ in annos:
-        ann = remap_points(ann_)
-        if ann is None:
-            continue
-        sub_class = ann.get('sub_class')
-        region = ann.get('region')
-        x,y = region['x'],region['y']
-        w,h = region['width'],region['height']
-        if w >20 and h>20 and sub_class in POSITIVE_CLASS:
-            all_pos_bbox.append([x, y, x+w, y+h])
-    return all_pos_bbox
-
-def ensure_neg(square, pos_bbox):
-    for pbox in pos_bbox:
-        if is_bbox_inside(pbox, square, tolerance=10):
-            return False
-        if overlap_enough(pbox, square, min_overlap=25):
-            return False
-    return True
-
 def process_pos_slide(rowInfo):
     pos_patches_result = {} # key is patch id, value is patch anno info
-    neg_patches_result = []
-    slide = KFBSlide(f'{args.data_root_dir}/{rowInfo.kfb_path}')
+    slide = KFBSlide(rowInfo.kfb_path)
     swidth, sheight = slide.level_dimensions[LEVEL]
     downsample_ratio = slide.level_downsamples[LEVEL]
     total_cols = int(swidth // STRIDE) + 1
     json_path = f'{args.data_root_dir}/{rowInfo.anno_path}'
     annos = read_json_anno(json_path)
-    pos_bbox = filter_pos_bbox(annos)
-    neg_patch_idx = 0
+    
     for ann_ in annos:
         ann = remap_points(ann_)
         if ann is None:
@@ -102,23 +77,7 @@ def process_pos_slide(rowInfo):
         region = ann.get('region')
         x,y = region['x'],region['y']
         w,h = region['width'],region['height']
-        
-        origin_edge = PATCH_EDGE*downsample_ratio
-        if w>origin_edge and h>origin_edge and sub_class == 'ROI':
-            x1,y1 = random_cut_square((x,y,w,h), origin_edge)
-            square = [x1,y1,x1+origin_edge,y1+origin_edge]
-            if ensure_neg(square, pos_bbox):
-                filename = f"{rowInfo.patientId}_{neg_patch_idx}.png"
-                neg_patches_result.append({
-                    'filename': filename,
-                    'square_x1y1': [x1//downsample_ratio,y1//downsample_ratio],
-                    'bboxes': [],
-                    'clsnames': [],
-                    'diagnose': 0
-                })
-                neg_patch_idx += 1
-                continue
-                
+
         if w <=20 or h<=20 or sub_class not in POSITIVE_CLASS:
             continue
 
@@ -128,21 +87,18 @@ def process_pos_slide(rowInfo):
         for stp,coord in match_patches:
             row,col= stp
             patchid = row * total_cols + col
-            
             sx1,sy1 = col * STRIDE, row * STRIDE
             sx2,sy2 = sx1 + PATCH_EDGE, sy1 + PATCH_EDGE
             if sx2 > swidth:
                 exceed = sx2 - swidth
                 sx1 = sx1 - exceed
                 sx2 = swidth
-                ix1,iy1,ix2,iy2 = coord
-                coord = [ix1 - exceed,iy1,ix2 - exceed,iy2]
+                coord = calc_relative_coord([sx1,sy1,sx2,sy2],target_bbox)
             if sy2 > sheight:
                 exceed = sy2 - sheight
                 sy1 = sy1 - exceed
                 sy2 = sheight
-                ix1,iy1,ix2,iy2 = coord
-                coord = [ix1,iy1 - exceed,ix2,iy2 - exceed]
+                coord = calc_relative_coord([sx1,sy1,sx2,sy2],target_bbox)
 
             if patchid not in pos_patches_result.keys():
                 pos_patches_result[patchid] = {
@@ -156,11 +112,11 @@ def process_pos_slide(rowInfo):
                 pos_patches_result[patchid]['bboxes'].append(coord)
                 pos_patches_result[patchid]['clsnames'].append(sub_class)
     
-    return list(pos_patches_result.values()),neg_patches_result
+    return list(pos_patches_result.values())
 
 def process_pos_slide_wxl(rowInfo):
     patches_result = {} # key is patch id, value is patch anno info
-    slide = KFBSlide(f'{args.data_root_dir}/{rowInfo.kfb_path}')
+    slide = KFBSlide(rowInfo.kfb_path)
     swidth, sheight = slide.level_dimensions[LEVEL]
     downsample_ratio = slide.level_downsamples[LEVEL]
     total_cols = int(swidth // STRIDE) + 1
@@ -179,21 +135,18 @@ def process_pos_slide_wxl(rowInfo):
         for stp,coord in match_patches:
             row,col= stp
             patchid = row * total_cols + col
-            
             sx1,sy1 = col * STRIDE, row * STRIDE
             sx2,sy2 = sx1 + PATCH_EDGE, sy1 + PATCH_EDGE
             if sx2 > swidth:
                 exceed = sx2 - swidth
                 sx1 = sx1 - exceed
                 sx2 = swidth
-                ix1,iy1,ix2,iy2 = coord
-                coord = [ix1 - exceed,iy1,ix2 - exceed,iy2]
+                coord = calc_relative_coord([sx1,sy1,sx2,sy2],target_bbox)
             if sy2 > sheight:
                 exceed = sy2 - sheight
                 sy1 = sy1 - exceed
                 sy2 = sheight
-                ix1,iy1,ix2,iy2 = coord
-                coord = [ix1,iy1 - exceed,ix2,iy2 - exceed]
+                coord = calc_relative_coord([sx1,sy1,sx2,sy2],target_bbox)
 
             if patchid not in patches_result.keys():
                 patches_result[patchid] = {
@@ -207,7 +160,7 @@ def process_pos_slide_wxl(rowInfo):
                 patches_result[patchid]['bboxes'].append(coord)
                 patches_result[patchid]['clsnames'].append(sub_class)
     
-    return list(patches_result.values()),[]
+    return list(patches_result.values())
 
 def gene_patch_json():
     train_data_df = pd.read_csv(args.train_csv_file)
@@ -215,34 +168,36 @@ def gene_patch_json():
 
     for data_df,mode in zip([train_data_df,val_data_df], ['train','val']):
         all_patch_list = []
-        total_pos_nums, total_neg_nums = 0,0
+        total_pos_nums = 0
         for row in tqdm(data_df.itertuples(index=True), total=len(data_df)):
             # if row.Index > 5:
             #     break
-            if row.kfb_clsname != 'NILM':
-                if row.kfb_source == 'WXL_1':
-                    pos_patch_list,neg_patch_list = process_pos_slide_wxl(row)
-                else:
-                    pos_patch_list,neg_patch_list = process_pos_slide(row)
-                total_pos_nums += len(pos_patch_list)
-                total_neg_nums += len(neg_patch_list)
-                patch_list = [*pos_patch_list, *neg_patch_list]
-                
-                all_patch_list.append({
-                    'patientId': row.patientId,
-                    'kfb_path': row.kfb_path,
-                    'patch_list': patch_list
-                })
-        print(f'{mode}: {total_pos_nums} pos patches and {total_neg_nums} neg patches.')
+            if row.kfb_clsname == 'NILM':
+                continue
+            if row.kfb_source == 'WXL_1':
+                pos_patch_list = process_pos_slide_wxl(row)
+            else:
+                pos_patch_list = process_pos_slide(row)
+            # slide = KFBSlide(row.kfb_path)
+            # for item in pos_patch_list:
+            #     vis_sample(slide, item)
 
-        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches.json', 'w') as f:
+            total_pos_nums += len(pos_patch_list)
+            all_patch_list.append({
+                'patientId': row.patientId,
+                'kfb_path': row.kfb_path,
+                'patch_list': pos_patch_list
+            })
+        print(f'{mode}: {total_pos_nums} pos patches.')
+
+        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches_v2.json', 'w') as f:
             json.dump(all_patch_list, f)
 
 def cut_save(kfb_list):
     os.makedirs(f'{args.save_dir}/images/Pos', exist_ok=True)
     os.makedirs(f'{args.save_dir}/images/NegInPos', exist_ok=True)
     for kfbinfo in tqdm(kfb_list, ncols=80):
-        slide = KFBSlide(f'{args.data_root_dir}/{kfbinfo["kfb_path"]}')
+        slide = KFBSlide(kfbinfo["kfb_path"])
         patch_list = kfbinfo['patch_list']
         for patchinfo in patch_list:
             x1,y1 = patchinfo['square_x1y1']
@@ -271,39 +226,22 @@ def cut_patch():
         for p in processes:
             p.get()
 
-def vis_sample(vis_nums):
+def vis_sample(slide,patchinfo):
     sample_save_dir = 'statistic_results/0319/cut_pos_sample'
     os.makedirs(sample_save_dir, exist_ok=True)
-    with open(f'{args.save_dir}/annofiles/train_posslide_patches.json', 'r') as f:
-        kfb_list = json.load(f)
+    x1,y1 = patchinfo['square_x1y1']
+    innerbbox,bbox_clsname = patchinfo['bboxes'],patchinfo['clsnames']
+
+    inside_items = []
+    for coords,clsname in zip(innerbbox,bbox_clsname):
+        inside_items.append({'sub_class': clsname,'region': coords})
     
-    for idx, kfbinfo in enumerate(kfb_list):
-        if idx == vis_nums:
-            break
-        slide = KFBSlide(f'{args.data_root_dir}/{kfbinfo["kfb_path"]}')
-        patch_list = kfbinfo['patch_list']
-        random.shuffle(patch_list)
-        for pidx, patchinfo in enumerate(patch_list):
-            if pidx == vis_nums:
-                break
-            x1,y1 = patchinfo['square_x1y1']
-            innerbbox,bbox_clsname = patchinfo['bboxes'],patchinfo['clsnames']
+    location, level, size = (x1,y1), LEVEL, (PATCH_EDGE,PATCH_EDGE)
+    read_result = Image.fromarray(slide.read_region(location, level, size))
+    filename = patchinfo["filename"]
+    square_coords = [0,0,PATCH_EDGE,PATCH_EDGE]
+    draw_OD(read_result, f'{sample_save_dir}/{filename}', square_coords, inside_items,category_colors)
 
-            inside_items = []
-            for coords,clsname in zip(innerbbox,bbox_clsname):
-                cx1,cy1,cx2,cy2 = coords
-                inside_items.append({
-                    'sub_class': clsname,
-                    'region': dict(x=cx1,y=cy1,width=cx2-cx1,height=cy2-cy1)
-                })
-            
-            location, level, size = (x1,y1), LEVEL, (PATCH_EDGE,PATCH_EDGE)
-            read_result = Image.fromarray(slide.read_region(location, level, size))
-            filename = patchinfo["filename"]
-            square_coords = [0,0,PATCH_EDGE,PATCH_EDGE]
-            draw_OD(read_result, f'{sample_save_dir}/{filename}', square_coords, inside_items,category_colors)
-
-            
 
 parser = argparse.ArgumentParser()
 parser.add_argument('train_csv_file', type=str)
@@ -317,9 +255,9 @@ args = parser.parse_args()
 if __name__ == '__main__':
     os.makedirs(f'{args.save_dir}/images', exist_ok=True)
     os.makedirs(f'{args.save_dir}/annofiles', exist_ok=True)
-    # gene_patch_json()
+    gene_patch_json()
     # vis_sample(vis_nums = 5)
-    cut_patch()
+    # cut_patch()
 
 '''
 python scripts/0319/slide_cut_pos.py \
@@ -329,4 +267,8 @@ python scripts/0319/slide_cut_pos.py \
 
 train: 54028 pos patches and 11283 neg patches.
 val: 14199 pos patches and 2886 neg patches.
+
+v2
+train: 54028 pos patches.
+val: 14199 pos patches.
 '''

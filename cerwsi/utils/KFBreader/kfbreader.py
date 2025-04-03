@@ -178,7 +178,6 @@ def kfbslide_read_associated_image(osr, name):
     pixel = cast(_kfbslide_read_associated_image(osr, name), POINTER(c_ubyte))
     narray = np.ctypeslib.as_array(pixel, shape=(data_length,))
     ret = Image.open(BytesIO(narray))
-    print('aaa')
     kfbslide_buffer_free(osr, pixel)
     return ret
 

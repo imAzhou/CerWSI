@@ -11,7 +11,7 @@ def load_data(cfg):
         image_labels = [item[1] for item in batch]
         multi_pos_labels = [item[2] for item in batch]
         clsid_mask = [item[3] for item in batch]
-        image_paths = [item[4] for item in batch]
+        metainfo = [item[4] for item in batch]
 
         # 将 images 转换为一个批次的张量
         images_tensor = torch.stack(images, dim=0)
@@ -25,7 +25,7 @@ def load_data(cfg):
             'image_labels': imglabels_tensor,
             'multi_pos_labels': multilabels_tensor,
             'clsid_mask': clsid_mask,
-            'image_paths': image_paths
+            'metainfo': metainfo
         }
 
     train_transform = transforms.Compose([

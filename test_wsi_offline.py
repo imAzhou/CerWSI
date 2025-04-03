@@ -40,18 +40,23 @@ def test_net(cfg, model):
         with torch.no_grad():
             outputs = model(data_batch, 'val')
         
-        for bidx in range(len(outputs['img_probs'])):
+        for bidx in range(len(outputs['images'])):
             patientId = outputs['image_patientIds'][bidx]
             filename = os.path.basename(outputs['image_paths'][bidx])
-            pred_prob = outputs['img_probs'][bidx].item()
-            predict_rsults.append((patientId,filename,pred_prob))
+            if 'img_probs' in outputs:
+                pred_prob = outputs['img_probs'][bidx]
+                pred_label = (pred_prob > POSITIVE_THR).int().item()
+            elif 'token_classes' in outputs:
+                pred_cls = torch.max(outputs['token_classes'][bidx], dim=-1)[0]
+                pred_label = (pred_cls > 0).int().item()
+            predict_rsults.append((patientId,filename,pred_label))
 
     results = collect_results(predict_rsults, len(valloader.dataset))
     if is_main_process():
         pbar.close()
         patient_dict = defaultdict(list)
-        for patientId, filename, pred_prob in results:
-            patient_dict[patientId].append([filename, pred_prob])
+        for patientId, filename, pred_label in results:
+            patient_dict[patientId].append([filename, pred_label])
         patient_dict = dict(patient_dict)
         
         with open(f'{args.save_dir}/slide_pred_result.json', 'w') as f:
@@ -64,7 +69,7 @@ def evaluate_slide(patient_dict):
     positive_ratio_thr = 0.05
     y_true,y_pred = [],[]
     for row in tqdm(all_kfb_info.itertuples(), total=len(all_kfb_info), ncols=80):
-        pos_pred = [i[1] > POSITIVE_THR for i in patient_dict[row.patientId]]
+        pos_pred = [i[1] for i in patient_dict[row.patientId]]
         p_path_num = sum(pos_pred)
         n_patch_num = len(pos_pred) - p_path_num
         p_ratio = p_path_num / (p_path_num + n_patch_num + 1e-6)    # 防止除0
@@ -106,11 +111,14 @@ def main():
 if __name__ == '__main__':
     main()
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
+    # with open(f'{args.save_dir}/slide_pred_result.json', 'r') as f:
+    #     patient_dict = json.load(f)
+    # evaluate_slide(patient_dict)
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_wsi_offline.py \
     /c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv \
-    log/l_cerscan_v2/chief/2025_03_30_17_39_32/config.py \
-    log/l_cerscan_v2/chief/2025_03_30_17_39_32/checkpoints/best.pth \
-    log/l_cerscan_v2/chief/2025_03_30_17_39_32
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/config.py \
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/checkpoints/best.pth \
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05
 '''

@@ -38,8 +38,8 @@ class ClsDataset(Dataset):
         # 0为阴性，阳性id都会大于0
         gt_bboxes_clsid = [self.classes.index(name) for name in imginfo['clsnames']]
         clsid_mask = self.generate_bbox_mask(imginfo['bboxes'], gt_bboxes_clsid, image.size)
-
-        return input_tensor,image_label,multi_pos_labels,clsid_mask,imgpath
+        imginfo['imgpath'] = imgpath
+        return input_tensor,image_label,multi_pos_labels,clsid_mask,imginfo
 
     def get_mliti_pos_labels(self, imginfo):
         # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]

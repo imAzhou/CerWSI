@@ -67,7 +67,7 @@ class DTCWTModule(nn.Module):
         xh[0]=torch.permute(xh[0], (0, 4, 1, 2, 3, 5))
 
         dtcwt_x = self.ifm((xl,xh)) # (bs, C, h, w)
-        dtcwt_x = dtcwt_x.permute(0,3,1,2)
+        dtcwt_x = dtcwt_x.permute(0,2,3,1)
 
         return dtcwt_x
    
@@ -81,8 +81,8 @@ class AttentionDTCWT(nn.Module):
         qkv_bias: bool = True,
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
+        input_size: Optional[Tuple[int, int]] = None,
         feat_size: int = 32,
-        input_size: Optional[Tuple[int, int]] = None
     ) -> None:
         super().__init__()
         self.num_heads = num_heads

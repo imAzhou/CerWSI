@@ -152,7 +152,7 @@ def draw_senspc_in_thr(y_true, y_pred, fig_savepath):
     plt.grid(axis='y', linestyle='--', alpha=0.5)
     plt.savefig(fig_savepath)
 
-def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, positive_ratio_thr = 0.005):
+def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, positive_ratio_thr = 0.05):
     slide_pred, slide_gt = [],[]
     all_kfb_info = pd.read_csv(csv_file)
     for row in tqdm(all_kfb_info.itertuples(), total=len(all_kfb_info), ncols=80):
@@ -191,7 +191,7 @@ def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, p
         f.writelines(txt_lines)
 
 if __name__ == '__main__':
-    root_dir = 'log/l_cerscan_v2/chief/2025_03_30_17_39_32'
+    root_dir = 'log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05'
     csv_file = '/c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv'
 
     with open(f'{root_dir}/slide_pred_result.json', 'r') as f:

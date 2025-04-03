@@ -66,14 +66,22 @@ def test_net(cfg, model, model_without_ddp):
             outputs = model(data_batch, 'val')
         model_without_ddp.classifier.evaluator.process(data_samples=[outputs], data_batch=None)
         
-        for bidx in range(len(outputs['img_probs'])):
-            pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
-            pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
-            if pred_label == 0:
-                pred_multi_label = [0]
-            else:
-                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
-            
+        for bidx in range(len(outputs['images'])):
+            if 'img_probs' in outputs:
+                pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
+                pred_score = outputs['img_probs'][bidx].item()
+            if 'pos_probs' in outputs:
+                pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
+                if pred_label == 0:
+                    pred_multi_label = [0]
+                else:
+                    pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
+            if 'token_classes' in outputs:
+                pred_cls = torch.max(outputs['token_classes'][0], dim=-1)[0]
+                pred_label = (pred_cls > 0).int().item()
+                pred_multi_label = []
+                pred_score = 0.0
+
             gt_multi_label = torch.nonzero(outputs['multi_pos_labels'][bidx], as_tuple=True)[0]
             gt_multi_label = [i.item()+1 for i in gt_multi_label]
             if len(gt_multi_label) == 0:
@@ -82,7 +90,7 @@ def test_net(cfg, model, model_without_ddp):
                 img_path = outputs['image_paths'][bidx],
                 gt_label = outputs['image_labels'][bidx].item(),
                 pred_label = pred_label,
-                pred_score = outputs['img_probs'][bidx].item(),
+                pred_score = pred_score,
                 pos_gt = gt_multi_label,
                 pos_pred = pred_multi_label
             )
@@ -159,8 +167,8 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_PatchClsNet.py \
-    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/config.py \
-    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/checkpoints/best.pth \
-    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12341 test_PatchClsNet.py \
+    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/config.py \
+    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/checkpoints/best.pth \
+    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44
 '''

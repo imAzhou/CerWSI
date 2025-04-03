@@ -6,11 +6,10 @@ import warnings
 import os
 import random
 import json
-import multiprocessing
 from multiprocessing import Pool
 from PIL import Image
 import matplotlib.pyplot as plt
-from cerwsi.utils import (KFBSlide,remap_points,read_json_anno,decode_xml,random_cut_square,is_bbox_inside,calc_relative_coord,draw_OD)
+from cerwsi.utils import (KFBSlide,remap_points,read_json_anno,decode_xml,is_bbox_inside,calc_relative_coord,draw_OD)
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
@@ -18,6 +17,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules
 LEVEL = 1
 PATCH_EDGE = 700
 STRIDE = 650
+NEGATIVE_CLASS = ['NILM', 'GEC']
 POSITIVE_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC', 'AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
 colors = plt.cm.tab10(np.linspace(0, 1, len(POSITIVE_CLASS)))[:, :3] * 255
 category_colors = {cat: tuple(map(int, color)) for cat, color in zip(POSITIVE_CLASS, colors)}
@@ -78,7 +78,7 @@ def process_pos_slide(rowInfo):
         x,y = region['x'],region['y']
         w,h = region['width'],region['height']
 
-        if w <=20 or h<=20 or sub_class not in POSITIVE_CLASS:
+        if w <=20 or h<=20 or sub_class not in [*NEGATIVE_CLASS, *POSITIVE_CLASS]:
             continue
 
         scaled_bbox = np.array([x,y,x+w,y+h]) // downsample_ratio
@@ -112,7 +112,15 @@ def process_pos_slide(rowInfo):
                 pos_patches_result[patchid]['bboxes'].append(coord)
                 pos_patches_result[patchid]['clsnames'].append(sub_class)
     
-    return list(pos_patches_result.values())
+    keep_patches = []
+    for patchid,patchInfo in pos_patches_result.items():
+        unique_clsnames = list(set(patchInfo['clsnames']))
+        for clsname in unique_clsnames:
+            if clsname in POSITIVE_CLASS:
+                keep_patches.append(patchInfo)
+                break
+            
+    return keep_patches
 
 def process_pos_slide_wxl(rowInfo):
     patches_result = {} # key is patch id, value is patch anno info
@@ -190,7 +198,7 @@ def gene_patch_json():
             })
         print(f'{mode}: {total_pos_nums} pos patches.')
 
-        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches_v2.json', 'w') as f:
+        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches.json', 'w') as f:
             json.dump(all_patch_list, f)
 
 def cut_save(kfb_list):
@@ -227,7 +235,7 @@ def cut_patch():
             p.get()
 
 def vis_sample(slide,patchinfo):
-    sample_save_dir = 'statistic_results/0319/cut_pos_sample'
+    sample_save_dir = 'statistic_results/0403/filter_pos_sample'
     os.makedirs(sample_save_dir, exist_ok=True)
     x1,y1 = patchinfo['square_x1y1']
     innerbbox,bbox_clsname = patchinfo['bboxes'],patchinfo['clsnames']
@@ -242,6 +250,62 @@ def vis_sample(slide,patchinfo):
     square_coords = [0,0,PATCH_EDGE,PATCH_EDGE]
     draw_OD(read_result, f'{sample_save_dir}/{filename}', square_coords, inside_items,category_colors)
 
+def foramt_json():
+    '''
+    1. 去掉阳性框内部的小框
+    2. 若阴性框内部有阳性框，丢弃阴性框保留阳性框
+    '''
+
+    def pos_box_enclosured(bbox, all_bboxes):
+        for parent_bbox in all_bboxes:
+            if bbox[0] == parent_bbox[0] and bbox[1] == parent_bbox[1] and bbox[2] == parent_bbox[2] and bbox[3] == parent_bbox[3]:
+                continue
+            if is_bbox_inside(bbox, parent_bbox, 5):
+                return True
+        return False
+    
+    def has_posbox_inside(bbox, all_bboxes):
+        for child_bbox in all_bboxes:
+            if is_bbox_inside(child_bbox, bbox, 5):
+                return True
+        return False
+
+    for mode in ['train', 'val']:
+        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches.json', 'r') as f:
+            kfb_list = json.load(f)
+        cnt = 0
+        for kfbinfo in tqdm(kfb_list, ncols=80):
+            new_patch_list = []
+            for patchinfo in kfbinfo['patch_list']:
+                if len(patchinfo['bboxes']) != 1:
+                    new_bboxes,nes_clsnames = [],[]
+                    posboxes = [box for box,clsn in zip(patchinfo['bboxes'], patchinfo['clsnames']) if clsn in POSITIVE_CLASS]
+                    for bbox,clsname in zip(patchinfo['bboxes'], patchinfo['clsnames']):
+                        if clsname in POSITIVE_CLASS and pos_box_enclosured(bbox, patchinfo['bboxes']):
+                            continue
+                        if clsname in NEGATIVE_CLASS and has_posbox_inside(bbox, posboxes):
+                            continue
+                        new_bboxes.append(bbox)
+                        nes_clsnames.append(clsname)
+                    patchinfo['bboxes'] = new_bboxes
+                    patchinfo['clsnames'] = nes_clsnames
+                
+                if len(patchinfo['bboxes']) != 0:
+                    new_patch_list.append(patchinfo)
+                else:
+                    cnt += 1
+                    # os.remove(f'data_resource/0403/images/Pos/{patchinfo["filename"]}')
+            kfbinfo['patch_list'] = new_patch_list
+
+        with open(f'{args.save_dir}/annofiles/{mode}_posslide_patches_filtered.json', 'w') as f:
+            json.dump(kfb_list, f)
+        print(f'{mode} delete {cnt} empty pos patches.')
+        # for kfbinfo in tqdm(kfb_list, ncols=80):
+        #     slide = KFBSlide(kfbinfo["kfb_path"])
+        #     patch_list = kfbinfo['patch_list']
+        #     for item in patch_list:
+        #         vis_sample(slide, item)
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('train_csv_file', type=str)
@@ -255,20 +319,17 @@ args = parser.parse_args()
 if __name__ == '__main__':
     os.makedirs(f'{args.save_dir}/images', exist_ok=True)
     os.makedirs(f'{args.save_dir}/annofiles', exist_ok=True)
-    gene_patch_json()
-    # vis_sample(vis_nums = 5)
+    # gene_patch_json()
     # cut_patch()
+    foramt_json()
 
 '''
-python scripts/0319/slide_cut_pos.py \
+python scripts/0403/slide_cut_pos.py \
     data_resource/slide_anno/0319/train.csv \
     data_resource/slide_anno/0319/val.csv \
-    --save_dir /nfs5/zly/codes/CerWSI/data_resource/0319
+    --save_dir /nfs5/zly/codes/CerWSI/data_resource/0403
 
-train: 54028 pos patches and 11283 neg patches.
-val: 14199 pos patches and 2886 neg patches.
-
-v2
-train: 54028 pos patches.
-val: 14199 pos patches.
+train: 54028 pos patches. - 55 empty pos patches. = 53973
+val: 14199 pos patches. - 17 empty pos patches. = 14182
+total: 68155 pos patches.
 '''

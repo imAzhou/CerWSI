@@ -49,6 +49,7 @@ def test_net(cfg, model):
             elif 'token_classes' in outputs:
                 pred_cls = torch.max(outputs['token_classes'][bidx], dim=-1)[0]
                 pred_label = (pred_cls > 0).int().item()
+            print(pred_label)
             predict_rsults.append((patientId,filename,pred_label))
 
     results = collect_results(predict_rsults, len(valloader.dataset))

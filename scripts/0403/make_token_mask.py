@@ -38,7 +38,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))  
 
-def vis_sample():
+def vis_sample(image,masks,input_boxes,filename):
     plt.figure(figsize=(10, 10))
     plt.imshow(image)
     for mask in masks:
@@ -47,10 +47,10 @@ def vis_sample():
         show_box(box.cpu().numpy(), plt.gca())
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig(f'statistic_results/0403/sam_output_mask/{patchinfo["filename"]}')
+    plt.savefig(f'statistic_results/0403/sam_output_mask/{filename}')
     plt.close()
 
-if __name__ == '__main__':
+def make_token_mask():
     path_prefix = 'data_resource/0403/images/Pos'
     os.makedirs('statistic_results/0403/sam_output_mask', exist_ok=True)
     os.makedirs('data_resource/0403/mask', exist_ok=True)
@@ -109,3 +109,6 @@ if __name__ == '__main__':
                 # shape = tuple(data['shape'])
                 # restored_gt_mask = np.zeros(shape, dtype=int)
                 # restored_gt_mask[nonzero_indices[0], nonzero_indices[1]] = nonzero_values
+
+if __name__ == '__main__':
+    pass

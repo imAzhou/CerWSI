@@ -117,9 +117,9 @@ if __name__ == '__main__':
     # evaluate_slide(patient_dict)
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12341 test_wsi_offline.py \
-    data_resource/slide_anno/0319/val.csv \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/config.py \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/checkpoints/best.pth \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_wsi_offline.py \
+    /c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv \
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/config.py \
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/checkpoints/best.pth \
+    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05
 '''

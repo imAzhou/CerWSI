@@ -152,7 +152,7 @@ def draw_senspc_in_thr(y_true, y_pred, fig_savepath):
     plt.grid(axis='y', linestyle='--', alpha=0.5)
     plt.savefig(fig_savepath)
 
-def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, positive_ratio_thr = 0.005):
+def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, positive_ratio_thr = 0.05):
     slide_pred, slide_gt = [],[]
     all_kfb_info = pd.read_csv(csv_file)
     for row in tqdm(all_kfb_info.itertuples(), total=len(all_kfb_info), ncols=80):
@@ -191,9 +191,14 @@ def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, p
         f.writelines(txt_lines)
 
 if __name__ == '__main__':
+<<<<<<< HEAD
+    root_dir = 'log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05'
+    csv_file = '/c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv'
+=======
     root_dir = 'log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44'
     csv_file = 'data_resource/slide_anno/0319/val.csv'
     # csv_file = '/c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv'
+>>>>>>> 55b3eeb82935e369e1f06bbe676859e7a174408e
 
     with open(f'{root_dir}/slide_pred_result.json', 'r') as f:
         predInfo = json.load(f)

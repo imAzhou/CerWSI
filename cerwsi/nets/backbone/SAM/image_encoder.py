@@ -12,6 +12,7 @@ from typing import Optional, Tuple, Type
 
 from .common import LayerNorm2d, MLPBlock
 from .attn_module import Attention
+from .peft_ours import AttentionDTCWT
 
 # This class and its supporting functions below lightly adapted from the ViTDet backbone available at: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/vit.py # noqa
 class ImageEncoderViT(nn.Module):
@@ -33,6 +34,7 @@ class ImageEncoderViT(nn.Module):
         rel_pos_zero_init: bool = True, # True
         window_size: int = 0,   # 14
         global_attn_indexes: Tuple[int, ...] = (),  # [7, 15, 23, 31]
+        use_peft: str = None
     ) -> None:
         """
         Args:
@@ -70,6 +72,7 @@ class ImageEncoderViT(nn.Module):
                 torch.zeros(1, img_size // patch_size, img_size // patch_size, embed_dim)
             )
 
+        use_dtcwt_indexes = [0,1,2,3,4]
         self.blocks = nn.ModuleList()
         for i in range(depth):
             block = Block(
@@ -83,6 +86,7 @@ class ImageEncoderViT(nn.Module):
                 rel_pos_zero_init=rel_pos_zero_init,
                 window_size=window_size if i not in global_attn_indexes else 0,
                 input_size=(img_size // patch_size, img_size // patch_size),
+                use_dtcwt = use_peft == 'dtcwt' and bool(i in global_attn_indexes)
             )
             self.blocks.append(block)
 
@@ -146,6 +150,7 @@ class Block(nn.Module):
         rel_pos_zero_init: bool = True,
         window_size: int = 0,
         input_size: Optional[Tuple[int, int]] = None,
+        use_dtcwt: bool = False,
     ) -> None:
         """
         Args:
@@ -164,14 +169,21 @@ class Block(nn.Module):
         """
         super().__init__()
         self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim,
+        attn_args = dict(
+            dim=dim,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             use_rel_pos=use_rel_pos,
             rel_pos_zero_init=rel_pos_zero_init,
             input_size=input_size if window_size == 0 else (window_size, window_size),
         )
+        if use_dtcwt:
+            self.attn = AttentionDTCWT(
+                **attn_args,
+                feat_size=input_size[0],
+            )
+        else:
+            self.attn = Attention(**attn_args)
 
         self.norm2 = norm_layer(dim)
         self.mlp = MLPBlock(embedding_dim=dim, mlp_dim=int(dim * mlp_ratio), act=act_layer)

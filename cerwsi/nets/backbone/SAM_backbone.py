@@ -13,6 +13,7 @@ def get_peft_config(peft_type:str):
                 r=8,  # LoRA 的秩
                 lora_alpha=16,  # LoRA 的缩放因子
                 target_modules = ["attn.qkv", "attn.proj", "lin1", "lin2"],  # 应用 LoRA 的目标模块
+                exclude_modules=['dtcwt_module'],
                 lora_dropout=0.1,  # Dropout 概率
                 bias="none",  # 是否调整偏置
             )
@@ -74,15 +75,17 @@ class SAMEncoder(MetaBackbone):
             global_attn_indexes=encoder_cfg.encoder_global_attn_indexes,
             window_size=14,
             out_chans=out_chans,
+            use_peft=use_peft
         )
         self.token_size = int(image_size // vit_patch_size)
         if backbone_ckpt is not None:
             self.load_backbone(backbone_ckpt)
 
         if frozen_backbone:
-            self.freeze_backbone()
+            update_keys = ['dtcwt_module']
+            self.freeze_backbone(update_keys)
 
-        if use_peft is not None:
+        if use_peft in ['lora', 'FourierFT']:
             self.peft_config = get_peft_config(use_peft)
             self.backbone = get_peft_model(self.backbone, self.peft_config).base_model
 
@@ -117,10 +120,13 @@ class SAMEncoder(MetaBackbone):
             
         return state_dict
 
-    def freeze_backbone(self):
+    def freeze_backbone(self, update_keys):
         '''frozen the backbone params'''
         for name, param in self.backbone.named_parameters():
             param.requires_grad = False
+            for key in update_keys:
+                if key in name:
+                    param.requires_grad = True
 
     def forward(self, x: torch.Tensor):
         embed_256,inter_feature = self.backbone(x, need_inter=True)

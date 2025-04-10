@@ -8,21 +8,8 @@ import cv2
 import random
 import os
 
-NEGATIVE_CLASS = ['NILM', 'GEC']
-POSITIVE_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC', 'AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
+
 classes = ['NILM', 'AGC', 'ASC-US', 'LSIL', 'ASC-H', 'HSIL']
-# 类别映射关系
-RECORD_CLASS = {
-    'ASC-US': 'ASC-US',
-    'LSIL': 'LSIL',
-    'ASC-H': 'ASC-H',
-    'HSIL': 'HSIL',
-    'SCC': 'HSIL',
-    'AGC-N': 'AGC',
-    'AGC': 'AGC',
-    'AGC-NOS': 'AGC',
-    'AGC-FN': 'AGC',
-}
 
 def show_mask(mask, ax, random_color=False):
     if random_color:
@@ -38,7 +25,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))  
 
-def vis_sample(image,masks,input_boxes,filename):
+def vis_sample():
     plt.figure(figsize=(10, 10))
     plt.imshow(image)
     for mask in masks:
@@ -47,13 +34,13 @@ def vis_sample(image,masks,input_boxes,filename):
         show_box(box.cpu().numpy(), plt.gca())
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig(f'statistic_results/0403/sam_output_mask/{filename}')
+    plt.savefig(f'statistic_results/0328/sam_output_mask/{patchinfo["filename"]}')
     plt.close()
 
-def make_token_mask():
-    path_prefix = 'data_resource/0403/images/Pos'
-    os.makedirs('statistic_results/0403/sam_output_mask', exist_ok=True)
-    os.makedirs('data_resource/0403/mask', exist_ok=True)
+if __name__ == '__main__':
+    path_prefix = 'data_resource/0328/0410slide/Pos'
+    os.makedirs('statistic_results/0328/sam_output_mask', exist_ok=True)
+    os.makedirs('data_resource/0328/0410slide_mask4fusion', exist_ok=True)
 
     sam_checkpoint = "/nfs5/zly/codes/segment-anything/checkpoints/sam_vit_h_4b8939.pth"
     model_type = "vit_h"
@@ -63,14 +50,21 @@ def make_token_mask():
 
     predictor = SamPredictor(sam)
 
-    for mode in ['train', 'val']:
-        with open(f'data_resource/0403/annofiles/{mode}_posslide_patches_filtered.json', 'r') as f:
-            kfb_list = json.load(f)
-        
-        for idx, kfbinfo in enumerate(tqdm(kfb_list, ncols=80)):
-            patch_list = kfbinfo['patch_list']
-            for patchinfo in patch_list:
+    for mode in ['val']:
+        # with open(f'data_resource/0328/annofiles/{mode}4fusion.json', 'r') as f:
+        with open(f'data_resource/0328/annofiles/zheyi_slide_4fusion.json', 'r') as f:
+            slide_list = json.load(f)
+        for slieinfo in slide_list:
+            patientId = slieinfo['patientId']
+            # if patientId != 'ZY_ONLINE_1_74':
+            #     continue
+            for patchinfo in tqdm(slieinfo['patchlist'], ncols=80):
                 # if random.random() > 0.01:
+                #     continue
+                if patchinfo['diagnose'] == 0:
+                    continue
+                # patientId = '_'.join(patchinfo["filename"].split('_')[:3])
+                # if patientId != 'ZY_ONLINE_1_74':
                 #     continue
                 imgpath = f'{path_prefix}/{patchinfo["filename"]}'
                 image = cv2.imread(imgpath)
@@ -85,14 +79,14 @@ def make_token_mask():
                     boxes=transformed_boxes,
                     multimask_output=False,
                 )
+                # vis_sample()
 
                 h, w = image.shape[:2]
-                gt_mask = np.zeros((h, w), dtype=int)
+                gt_mask = np.ones((h, w), dtype=int)
                 for mask, clsname in zip(masks, patchinfo['clsnames']):
-                    if clsname in NEGATIVE_CLASS:
-                        clsid = 1
-                    else:
-                        clsid = classes.index(RECORD_CLASS[clsname]) + 1
+                    if clsname not in classes:
+                        continue
+                    clsid = classes.index(clsname) + 1  # 1代表阴性，>1 代表阳性
                     forground_mask = mask[0].detach().cpu().numpy()
                     gt_mask[forground_mask] = clsid
                 purename = patchinfo["filename"].split('.')[0]
@@ -100,7 +94,7 @@ def make_token_mask():
                 nonzero_indices = np.array(np.nonzero(gt_mask))  # 非零元素索引
                 nonzero_values = gt_mask[nonzero_indices[0], nonzero_indices[1]]  # 非零元素值
                 # 保存索引和值
-                np.savez_compressed(f'data_resource/0403/mask/{purename}.npz', indices=nonzero_indices, values=nonzero_values, shape=gt_mask.shape)
+                np.savez_compressed(f'data_resource/0328/0410slide_mask4fusion/{purename}.npz', indices=nonzero_indices, values=nonzero_values, shape=gt_mask.shape)
 
                 # 读取并还原 gt_mask
                 # data = np.load(f'data_resource/0403/mask/{purename}.npz')
@@ -109,6 +103,4 @@ def make_token_mask():
                 # shape = tuple(data['shape'])
                 # restored_gt_mask = np.zeros(shape, dtype=int)
                 # restored_gt_mask[nonzero_indices[0], nonzero_indices[1]] = nonzero_values
-
-if __name__ == '__main__':
-    pass
+                

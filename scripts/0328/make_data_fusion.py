@@ -2,6 +2,7 @@ import json
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+import shutil
 
 def filter_zheyi_roi():
     save_ann_json = 'data_resource/0328/annofiles/zheyi_roi.json'
@@ -31,10 +32,13 @@ if __name__ == '__main__':
     for mode in ['train', 'val']:
         original_pn_cnt = [0,0]
         zheyiroi_pn_cnt = [0,0]
+        zheyislide_pn_cnt = [0,0]
         with open(f'{jfsw_json_dir}/{mode}_patches_v0403.json','r') as f:
             original_anno = json.load(f)
         with open(f'data_resource/0328/annofiles/{mode}4fusion.json','r') as f:
             zheyiroi_anno = json.load(f)
+        with open('data_resource/0328/annofiles/zheyi_slide_4fusion.json','r') as f:
+            zheyislide_anno = json.load(f)
 
         total_imginfo = []
         for imginfo in tqdm(original_anno, ncols=80):
@@ -43,27 +47,59 @@ if __name__ == '__main__':
             if patientId in [*invalid_pids, *excluded_patientIds]:
                 continue
             del imginfo['clsid']
-            imginfo['prefix'] = '0403/' + imginfo['prefix']
+            prefix = imginfo["prefix"]
+            imginfo['prefix'] = '0403jfsw/images/' + imginfo['prefix']
             total_imginfo.append(imginfo)
             original_pn_cnt[imginfo['diagnose']] += 1
+            # if imginfo['diagnose'] == 1:
+            #     src_path = f'data_resource/0403/images/{prefix}'
+            # else:
+            #     src_path = f'data_resource/0319/images/{prefix}'
+            # shutil.move(
+            #     f'{src_path}/{imginfo["filename"]}',
+            #     f'data_resource/0410/{imginfo["prefix"]}/{imginfo["filename"]}'
+            # )
         
         for imginfo in tqdm(zheyiroi_anno, ncols=80):
-            imginfo['prefix'] = '0328/' + imginfo['prefix']
+            prefix = imginfo["prefix"]
+            imginfo['prefix'] = '0328roi/images/' + imginfo['prefix']
             total_imginfo.append(imginfo)
             zheyiroi_pn_cnt[imginfo['diagnose']] += 1
+            src_path = f'data_resource/0328/images4fusion/{prefix}'
+            shutil.move(
+                f'{src_path}/{imginfo["filename"]}',
+                f'data_resource/0410/{imginfo["prefix"]}/{imginfo["filename"]}'
+            )
         
-        with open(f'data_resource/0328/annofiles/{mode}_v03280403.json','w') as f:
+        if mode == 'train':
+            zheyislide_patchlist = []
+            for slideinfo in tqdm(zheyislide_anno, ncols=80):
+                zheyislide_patchlist.extend(slideinfo['patchlist'])
+            for imginfo in tqdm(zheyislide_patchlist, ncols=80):
+                prefix = 'Pos' if imginfo['diagnose'] == 1 else 'Neg'
+                imginfo['prefix'] = '0410slide/images/' + prefix
+                total_imginfo.append(imginfo)
+                zheyislide_pn_cnt[imginfo['diagnose']] += 1
+                src_path = f'data_resource/0328/0410slide/{prefix}'
+                shutil.move(
+                    f'{src_path}/{imginfo["filename"]}',
+                    f'data_resource/0410/{imginfo["prefix"]}/{imginfo["filename"]}'
+                )
+        
+        with open(f'data_resource/0328/annofiles/{mode}_v0410.json','w') as f:
             json.dump(total_imginfo, f)
 
         print(original_pn_cnt)
         print(zheyiroi_pn_cnt)
-        print(np.sum([original_pn_cnt, zheyiroi_pn_cnt], axis=0))
+        print(zheyislide_pn_cnt)
+        print(np.sum([original_pn_cnt, zheyiroi_pn_cnt, zheyislide_pn_cnt], axis=0))
 
 '''
 Train: 
 original_pn_cnt: [45305, 25086]
 zheyiroi_pn_cnt: [5256, 7057]
-Total: [50561 32143]
+zheyislide_pn_cnt: [1744, 1330]
+Total: [52305 33473]
 
 Val:
 original_pn_cnt: [11551, 7187]

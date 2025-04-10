@@ -12,7 +12,7 @@ from typing import Optional, Tuple, Type
 
 from .common import LayerNorm2d, MLPBlock
 from .attn_module import Attention
-from .peft_ours import AttentionDTCWT
+from .peft_ours import DTCWTModule
 
 # This class and its supporting functions below lightly adapted from the ViTDet backbone available at: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/vit.py # noqa
 class ImageEncoderViT(nn.Module):
@@ -34,7 +34,7 @@ class ImageEncoderViT(nn.Module):
         rel_pos_zero_init: bool = True, # True
         window_size: int = 0,   # 14
         global_attn_indexes: Tuple[int, ...] = (),  # [7, 15, 23, 31]
-        use_peft: str = None
+        use_dtcwt_indexes: Tuple[int, ...] = (),  # [0,1]
     ) -> None:
         """
         Args:
@@ -57,6 +57,7 @@ class ImageEncoderViT(nn.Module):
         super().__init__()
         self.img_size = img_size
         self.global_attn_indexes = global_attn_indexes
+        self.use_dtcwt_indexes = use_dtcwt_indexes
 
         self.patch_embed = PatchEmbed(
             kernel_size=(patch_size, patch_size),
@@ -72,7 +73,6 @@ class ImageEncoderViT(nn.Module):
                 torch.zeros(1, img_size // patch_size, img_size // patch_size, embed_dim)
             )
 
-        use_dtcwt_indexes = [0,1,2,3,4]
         self.blocks = nn.ModuleList()
         for i in range(depth):
             block = Block(
@@ -85,10 +85,21 @@ class ImageEncoderViT(nn.Module):
                 use_rel_pos=use_rel_pos,
                 rel_pos_zero_init=rel_pos_zero_init,
                 window_size=window_size if i not in global_attn_indexes else 0,
-                input_size=(img_size // patch_size, img_size // patch_size),
-                use_dtcwt = use_peft == 'dtcwt' and bool(i in global_attn_indexes)
+                input_size=(img_size // patch_size, img_size // patch_size)
             )
             self.blocks.append(block)
+        
+        if len(self.use_dtcwt_indexes) > 0:
+            self.dtxwts = nn.ModuleList()
+            for i in range(depth):
+                if i in self.use_dtcwt_indexes:
+                    self.dtxwts.append(DTCWTModule(
+                        dim=embed_dim,
+                        num_heads=num_heads,
+                        feat_size=img_size // patch_size
+                    ))
+                else:
+                    self.dtxwts.append(nn.Identity())
 
         self.neck = nn.Sequential(
             nn.Conv2d(
@@ -119,8 +130,10 @@ class ImageEncoderViT(nn.Module):
         # if need_inter:
         #     inter_feature.append(x)     # (-1, h=64, w=64, c=1280)
 
-        for blk in self.blocks:
+        for idx,blk in enumerate(self.blocks):
             x = blk(x)
+            if len(self.use_dtcwt_indexes) > 0:
+                x = self.dtxwts[idx](x)
             # if blk.window_size == 0 and need_inter:
             #     inter_feature.append(x)     # (-1, h=64, w=64, c=1280)
 
@@ -149,8 +162,7 @@ class Block(nn.Module):
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
         window_size: int = 0,
-        input_size: Optional[Tuple[int, int]] = None,
-        use_dtcwt: bool = False,
+        input_size: Optional[Tuple[int, int]] = None
     ) -> None:
         """
         Args:
@@ -177,13 +189,7 @@ class Block(nn.Module):
             rel_pos_zero_init=rel_pos_zero_init,
             input_size=input_size if window_size == 0 else (window_size, window_size),
         )
-        if use_dtcwt:
-            self.attn = AttentionDTCWT(
-                **attn_args,
-                feat_size=input_size[0],
-            )
-        else:
-            self.attn = Attention(**attn_args)
+        self.attn = Attention(**attn_args)
 
         self.norm2 = norm_layer(dim)
         self.mlp = MLPBlock(embedding_dim=dim, mlp_dim=int(dim * mlp_ratio), act=act_layer)

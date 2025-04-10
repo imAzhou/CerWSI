@@ -16,17 +16,14 @@ import numpy as np
 import cv2
 import random
 
-from prettytable import PrettyTable
-from cerwsi.utils import calculate_metrics,print_confusion_matrix,draw_OD
-
 POSITIVE_THR = 0.5
-POSITIVE_CLASS = ['ASC-US','LSIL', 'ASC-H', 'HSIL', 'AGC']
+POSITIVE_CLASS = ['AGC', 'ASC-US','LSIL', 'ASC-H', 'HSIL']
 CLS_COLORS = {
+    'AGC': '#1f77b4',   # 蓝色
     'ASC-US': '#ff9999',  # 浅红
     'LSIL': '#ff6666',  # 中浅红
     'ASC-H': '#ff3333',  # 中红
     'HSIL': '#cc0000',  # 深红
-    'AGC': '#1f77b4'   # 蓝色
 }
 
 parser = argparse.ArgumentParser()
@@ -48,13 +45,16 @@ def draw_vis(img,bboxes_coords, bboxes_clsname,token_classes_resized,token_probs
     fig.subplots_adjust(wspace=0.01)
     # ========== 子图 1：原图 + Bounding Boxes ==========
     axes[0].imshow(img)
+    classname_denote = []
     for bbox, cls_name in zip(bboxes_coords, bboxes_clsname):
         x1, y1, x2, y2 = bbox
         color = CLS_COLORS.get(cls_name, 'white')
         rect = plt.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color, facecolor='none')
         axes[0].add_patch(rect)
         axes[0].text(x1, y1 - 5, cls_name, color=color, fontsize=8)
-    axes[0].set_title("Image with partial bboxes")
+        if cls_name in POSITIVE_CLASS:
+            classname_denote.append(POSITIVE_CLASS.index(cls_name)+1)
+    axes[0].set_title(f"Image with partial gt: {list(set(classname_denote))}")
     axes[0].axis("off")
 
     # ========== 子图 2：Token Classes 可视化 ==========
@@ -100,11 +100,14 @@ def test_net(cfg, model, model_without_ddp):
     if is_main_process():
         pbar = tqdm(valloader, ncols=80)
     for idx, data_batch in enumerate(pbar):
+        if idx > 1:
+            break
+        
         with torch.no_grad():
             outputs = model(data_batch, 'val')
         
         for bidx in range(len(outputs['images'])):
-            if random.random() < 0.5:
+            if random.random() < 0.1:
                 token_probs,token_classes = outputs['token_probs'][bidx],outputs['token_classes'][bidx]
                 feat_size = int(math.sqrt(token_probs.shape[0]))
                 metainfo = outputs['metainfo'][bidx]
@@ -142,12 +145,13 @@ def main():
         dist.destroy_process_group()
 
 if __name__ == '__main__':
-    vis_save_dir = 'statistic_results/WSI_heatmap_partial'
+
+    vis_save_dir = 'statistic_results/WSI_heatmap_alltoken'
     os.makedirs(vis_save_dir, exist_ok=True)
     main()
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12346 scripts/analyze/vis_token_pred.py \
-    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/config.py \
-    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/checkpoints/best.pth
+    log/zheyi_roi/wscer_alltoken/2025_04_08_22_15_06/config.py \
+    log/zheyi_roi/wscer_alltoken/2025_04_08_22_15_06/checkpoints/best.pth
 '''

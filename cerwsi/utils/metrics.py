@@ -126,7 +126,7 @@ class MyMultiTokenMetric(MultiLabelMetric):
         bs = bs_img_gt.shape[0]
         self.num_classes = data_samples['pos_probs'].shape[-1] + 1
         for bidx in range(bs):
-            gt_multi_label = torch.nonzero(data_samples['multi_pos_labels'][bidx], as_tuple=True)[0]
+            gt_multi_label = torch.nonzero(data_samples['multi_pos_label'][bidx], as_tuple=True)[0]
             gt_multi_label = [i+1 for i in gt_multi_label]
             if len(gt_multi_label) == 0:
                 gt_multi_label = [0]
@@ -247,25 +247,29 @@ class MultiPosMetric(MultiLabelMetric):
         thr = self.thr if self.thr else 0.3
         data_samples = data_samples[0]
         bs_pos_pred = (data_samples['pos_probs'] > thr).int()   # bs, num_cls-1
-
         bs_img_gt = data_samples['image_labels']
-        bs_img_pred = [1 if sum(pred_list)>0 else 0 for pred_list in bs_pos_pred]
         bs = bs_img_gt.shape[0]
 
         self.num_classes = data_samples['pos_probs'].shape[-1] + 1
 
         for bidx in range(bs):
-            gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
+            if 'token_labels' in data_samples:
+                gt_multi_label = list(set([tk[-1] for tk in data_samples['token_labels'][bidx]]))
+            else:
+                gt_multi_label = torch.nonzero(data_samples['multi_pos_label'][bidx], as_tuple=True)[0]
+                gt_multi_label = [i+1 for i in gt_multi_label]
             if len(gt_multi_label) == 0:
                 gt_multi_label = [0]
-            if bs_img_pred[bidx] == 0:
+            
+            pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+            img_pred = 1
+            if len(pred_multi_label) == 0:
                 pred_multi_label = [0]
-            else:
-                pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(bs_pos_pred[bidx]) if pred == 1]
+                img_pred = 0
 
             result = dict(
                 img_gt = bs_img_gt[bidx],
-                img_pred = bs_img_pred[bidx],
+                img_pred = img_pred,
                 gt_multi_label = gt_multi_label,
                 pred_multi_label = pred_multi_label,
             )

@@ -7,9 +7,10 @@ from .classifier.SVT_classifier import SVTClassifier
 from .classifier.wscer_mlc import WSCerMLC
 from .classifier.wscer_binary import WSCerBinary
 from .classifier.wscer_partial import WSCerPartial
+from .classifier.wscer_alltoken import WSCerAllToken
 
 allowed_classifier_type = ['binary_linear', 'mlc_linear', 'chief', 'ml_decoder', 'query2label', 'svt',
-                           'wscer_mlc', 'wscer_binary', 'wscer_partial']
+                           'wscer_mlc', 'wscer_binary', 'wscer_partial', 'wscer_alltoken']
 
 def get_classifier(args):
     classifier_type = args.classifier_type
@@ -35,5 +36,7 @@ def get_classifier(args):
         classifier = WSCerBinary
     if classifier_type == 'wscer_partial':
         classifier = WSCerPartial
+    if classifier_type == 'wscer_alltoken':
+        classifier = WSCerAllToken
     
     return classifier(args)

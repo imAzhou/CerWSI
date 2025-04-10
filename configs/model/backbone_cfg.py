@@ -9,7 +9,8 @@ UNICONFIG = dict(
     backbone_output_dim = [1024],
     backbone_ckpt = 'checkpoints/uni.bin',
     frozen_backbone = False,
-    use_peft = 'dtcwt',   # None, lora, FourierFT, dtcwt
+    use_peft = None,   # None, lora, FourierFT, dtcwt
+    vit_patch_size = 16
 )
 
 SAMCONFIG = dict(
@@ -17,7 +18,9 @@ SAMCONFIG = dict(
     backbone_ckpt = 'checkpoints/sam_vit_b_01ec64.pth',
     backbone_size_type = 'vit_b',
     frozen_backbone = True,
-    use_peft = 'dtcwt',   # None, lora, FourierFT, dtcwt
+    use_peft = 'lora', 
+    use_dtcwt_indexes = [],
+    vit_patch_size = 16
 )
 
 backbone_cfgdict = {

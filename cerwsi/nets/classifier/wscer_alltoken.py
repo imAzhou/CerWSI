@@ -2,10 +2,11 @@ import torch
 from torch import Tensor, nn
 import math
 import torch.nn.functional as F
-from typing import Tuple, Type
+from typing import List, Tuple, Type
 from .feat_pe import get_feat_pe
 from .meta_classifier import MetaClassifier
-from cerwsi.utils import build_evaluator, MyMultiTokenMetric
+from ..backbone.SAM.common import LayerNorm2d,MLP
+from cerwsi.utils import build_evaluator,MultiPosMetric
 
 class MLPBlock(nn.Module):
     def __init__(
@@ -31,7 +32,6 @@ class TwoWayAttentionBlock(nn.Module):
         activation: Type[nn.Module] = nn.ReLU,
         attention_downsample_rate: int = 2,
         skip_first_layer_pe: bool = False,
-        use_self_attn: bool = True,
     ) -> None:
         """
         A transformer block with four layers: (1) self-attention of sparse
@@ -47,10 +47,6 @@ class TwoWayAttentionBlock(nn.Module):
           skip_first_layer_pe (bool): skip the PE on the first layer
         """
         super().__init__()
-        self.use_self_attn = use_self_attn
-        if use_self_attn:
-            self.self_attn = Attention(embedding_dim, num_heads)
-            self.norm1 = nn.LayerNorm(embedding_dim)
 
         self.cross_attn_token_to_image = Attention(
             embedding_dim, num_heads, downsample_rate=attention_downsample_rate
@@ -71,14 +67,6 @@ class TwoWayAttentionBlock(nn.Module):
         self, queries: Tensor, keys: Tensor, key_pe: Tensor
     ) -> Tuple[Tensor, Tensor]:
         
-        # Self attention block
-        if self.use_self_attn:
-            if self.skip_first_layer_pe:
-                queries,_ = self.self_attn(q=queries, k=queries, v=queries)
-            else:
-                attn_out,_ = self.self_attn(q=queries, k=queries, v=queries)
-                queries = queries + attn_out
-            queries = self.norm1(queries)
 
         # Cross attention block, tokens attending to image embedding
         q = queries
@@ -165,55 +153,55 @@ class Attention(nn.Module):
         return out, attn_
 
 
-class WSCerMLC(MetaClassifier):
+class WSCerAllToken(MetaClassifier):
     def __init__(self, args):
-        input_embed_dim = args.backbone_cfg['backbone_output_dim'][0]
-        patch_size = args.backbone_cfg['vit_patch_size']
-        img_size = args.img_size
-        feat_size = img_size // patch_size
-        num_patches = feat_size*feat_size
-
+        input_embed_dim = args.neck_output_dim[0]
         num_classes = args.num_classes
-        evaluator = build_evaluator([MyMultiTokenMetric(thr = args.positive_thr)])
-        super(WSCerMLC, self).__init__(evaluator, **args)
+        evaluator = build_evaluator([MultiPosMetric(thr = args.positive_thr)])
+        super(WSCerAllToken, self).__init__(evaluator, **args)
 
         depth = 2
-        proj_dim_1 = 512
         num_heads = 8
         mlp_dim = 2048
-        use_self_attn = False
         self.pos_add_type = 'sam' # 'sam','query2label',None
         self.num_classes = num_classes
-        
-        self.proj_1 = nn.Sequential(
-            nn.Linear(input_embed_dim, proj_dim_1),
-            nn.ReLU(),
-            nn.Dropout(0.25)
-        )
-        
-        self.cls_tokens = nn.Embedding(num_classes, proj_dim_1)
+
+        # self.conv_fc = nn.Linear(input_embed_dim, 1)
+        self.cls_tokens = nn.Embedding(num_classes, input_embed_dim)
         self.layers = nn.ModuleList()
         for i in range(depth):
             self.layers.append(
                 TwoWayAttentionBlock(
-                    embedding_dim=proj_dim_1,
+                    embedding_dim=input_embed_dim,
                     num_heads=num_heads,
                     mlp_dim=mlp_dim,
                     activation=nn.ReLU,
                     attention_downsample_rate=2,
                     skip_first_layer_pe=(i == 0),
-                    use_self_attn = use_self_attn
                 )
             )
-        self.cls_neg_head = nn.Linear(proj_dim_1 + num_classes, 1)
+        self.output_upscaling = nn.Sequential(
+            nn.ConvTranspose2d(input_embed_dim, input_embed_dim // 4, kernel_size=2, stride=2),
+            LayerNorm2d(input_embed_dim // 4),
+            nn.GELU()
+        )
+        self.output_hypernetworks_mlps = nn.ModuleList(
+            [
+                MLP(input_embed_dim, input_embed_dim, input_embed_dim // 4, 3)
+                for i in range(self.num_classes)
+            ]
+        )
+
+        patch_size = args.backbone_cfg['vit_patch_size']
+        img_size = args.img_size
+        feat_size = img_size // patch_size
+        num_patches = feat_size*feat_size*4
         self.cls_pos_heads = nn.ModuleList()
         for i in range(num_classes-1):
             self.cls_pos_heads.append(nn.Linear(num_patches, 1))
 
     def calc_logits(self, img_tokens: torch.Tensor):
-        keys_1 = self.proj_1(img_tokens)  # (bs, num_tokens, C1=512)
-
-        bs, num_tokens, embed_dim = keys_1.shape
+        bs, num_tokens, embed_dim = img_tokens.shape
         feat_size = int(math.sqrt(num_tokens))
         queries = self.cls_tokens.weight.unsqueeze(0).expand(bs, -1, -1)
         key_pe = None
@@ -222,68 +210,133 @@ class WSCerMLC(MetaClassifier):
             key_pe = get_feat_pe(self.pos_add_type, embed_dim, (feat_size,feat_size))
             key_pe = key_pe.flatten(2).permute(0, 2, 1).to(self.device)
 
+        # feat_logits = self.conv_fc(img_tokens)  # (bs, num_tokens, 1)
+
         attn_array = []
         for layer in self.layers:
-            queries, keys_1, attn_out_q = layer(
+            queries, img_tokens, attn_out_q = layer(
                 queries=queries,
-                keys=keys_1,
+                keys=img_tokens,
                 key_pe=key_pe,
             )
             # attn_out_q: (bs, num_heads, num_cls, L)
             # attn_score: (bs, num_cls, L)
             attn_score = torch.mean(attn_out_q, dim=1)
             attn_array.append(attn_score)
-        # out = self.fc(queries)   # (bs, n_cls, 1)
-        # attn_map = None
-
-        # queries: (bs, n_cls, dim), keys_1: (bs, num_tokens, dim)
-        # keys_1 = keys_1 + key_pe
-        attn_map = torch.bmm(queries, keys_1.transpose(1, 2))   # (bs, n_cls, num_tokens)
-        # attn_map = attn_map / math.sqrt(embed_dim)
-        attn_array.append(attn_map)
-        attn_array = torch.stack(attn_array, dim=1)
-        # attn_map = F.softmax(attn_map, dim=-1)
-        # attn_map = (attn_map - attn_map.mean(-1, keepdim=True)) / (attn_map.std(-1, keepdim=True) + 1e-8)
         
-        avg_token = torch.mean(attn_map, dim=-1)
-        cls_pn_token = queries[:,0,:]  # (bs, C)
-        overall_neg_token = torch.cat([cls_pn_token, avg_token], dim=-1 )
-        pred_pn_logits = self.cls_neg_head(overall_neg_token)  # (bs, 1)
+        img_tokens = img_tokens.transpose(1, 2).view(bs, embed_dim, feat_size, feat_size)
+        upscaled_embedding = self.output_upscaling(img_tokens)
+        hyper_in_list: List[torch.Tensor] = []
+        for i in range(self.num_classes):
+            hyper_in_list.append(self.output_hypernetworks_mlps[i](queries[:, i, :]))
+        hyper_in = torch.stack(hyper_in_list, dim=1)
+        b, c, h, w = upscaled_embedding.shape
+        attn_map = (hyper_in @ upscaled_embedding.view(b, c, h * w))   # (bs, n_cls, num_tokens)
 
         pred_pos_logits = []
         for i in range(self.num_classes-1):
             pred_pos_logits.append(self.cls_pos_heads[i](attn_map[:,i+1,:]))  # [(bs, 1),]
         pred_pos_logits = torch.cat(pred_pos_logits, dim=-1)  # (bs, n_cls-1)
-        out = torch.cat([pred_pn_logits, pred_pos_logits], dim=-1)   # (bs, n_cls)
-        
-        return out, attn_array
+
+        # queries: (bs, n_cls, dim), img_tokens: (bs, num_tokens, dim)
+        # attn_map = torch.bmm(img_tokens, queries.transpose(1, 2))   # (bs, num_tokens, n_cls)
+        # attn_map = attn_map / math.sqrt(embed_dim)
+        # attn_array.append(attn_map)
+        attn_array = torch.stack(attn_array, dim=1)
+        # return feat_logits, attn_map.transpose(1, 2), attn_array
+        return pred_pos_logits, attn_map.transpose(1, 2), attn_array
     
-    def calc_pos_loss(self, pos_logits, databatch):
-        loss_fn = nn.BCEWithLogitsLoss()
-        binary_matrix = databatch['multi_pos_label'].to(self.device)     # (bs, pos_cls)
-        loss = loss_fn(pos_logits, binary_matrix)
-        return loss
+    def create_feat_gt(self, logits_shape, image_labels, clsid_mask):
+        '''
+        clsid_mask: 0-阴性，{1,2,3,4,5}-阳性
+        '''
+        bs,num_tokens,_ = logits_shape
+        feat_gt = torch.zeros((bs, num_tokens)).to(self.device)
+        balanced_mask = torch.zeros((bs, num_tokens)).to(self.device)
+        pos_tokens_nums = torch.sum(clsid_mask > 1).item()  # mini batch 中的阳性 token 数量
+        neg_tokens_nums = pos_tokens_nums*2 # 从阴性图片中采样的负样本数目是阳性样本的两倍
+        max_chosen_num = 4096
+
+        if pos_tokens_nums == 0:
+            neg_tokens_nums = max_chosen_num
+        neg_img_samples = torch.sum(image_labels == 0).item()  # 负样本图像的数量
+        assert not (pos_tokens_nums == 0 and neg_img_samples == 0), 'Not allowed with full pos images but no pos tokens.'
+
+        if neg_img_samples > 0:
+            neg_samples_per_img = neg_tokens_nums // neg_img_samples  # 每个图像需要采样的负样本数量
+            remaining_neg_samples = neg_tokens_nums % neg_img_samples  # 处理剩余未分配的负样本数量
+        for img_label,cmask,bidx in zip(image_labels,clsid_mask,range(bs)):
+            if img_label == 0:
+                keep_neg_nums = neg_samples_per_img
+                # 如果还有剩余的负样本，则随机给某些图像多分配一个负样本
+                if remaining_neg_samples > 0:
+                    keep_neg_nums += 1
+                    remaining_neg_samples -= 1
+                # 确保负样本不重复选择
+                neg_indices = torch.randperm(num_tokens)[:keep_neg_nums]
+                balanced_mask[bidx, neg_indices] = 1
+            else:
+                neginpos_indices = torch.nonzero(cmask == 0, as_tuple=True)[0]  # 获取阴性 token 的索引
+                num_samples = neginpos_indices.size(0) // 4  # 整除取一半
+                # 打乱并采样前 25%
+                perm = torch.randperm(neginpos_indices.size(0))
+                sampled_indices = neginpos_indices[perm[:num_samples]]
+                balanced_mask[bidx, sampled_indices] = 1
+
+                pos_indices = torch.nonzero(cmask > 0, as_tuple=True)[0]  # 获取阳性 token 的索引
+                feat_gt[bidx, pos_indices] = 1
+                balanced_mask[bidx, pos_indices] = 1
+        return feat_gt,balanced_mask
     
+    
+    # def calc_loss(self,feature_emb, databatch):
+    #     loss_fn_2 = nn.CrossEntropyLoss(reduction='none')
+    #     attn_map, _ = self.calc_logits(feature_emb)
+    #     # bs, num_tokens, _ = feat_logits.shape
+
+    #     clsid_mask = databatch['clsid_mask'].flatten(1).long().to(self.device)    # (bs, num_tokens)
+    #     feat_gt,balanced_mask = self.create_feat_gt(attn_map.shape, databatch['image_labels'], clsid_mask)
+    #     cls_loss = loss_fn_2(attn_map.permute(0, 2, 1), clsid_mask)
+    #     cls_loss = cls_loss * balanced_mask
+    #     cls_loss = cls_loss.sum() / balanced_mask.sum().float()
+
+    #     # loss = feat_loss + cls_loss
+    #     loss_dict = {
+    #         # 'feat_loss': feat_loss.item(),
+    #         'cls_loss': cls_loss.item(),
+    #     }
+    #     return cls_loss,loss_dict
+
     def calc_loss(self,feature_emb, databatch):
-        pred_logits,_ = self.calc_logits(feature_emb)
-        img_pn_logit = pred_logits[:, 0].unsqueeze(1)
-        positive_logits = pred_logits[:, 1:]
-        img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
-        pn_loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
-        pos_loss = self.calc_pos_loss(positive_logits, databatch)
-        loss = pn_loss + pos_loss
+        loss_fn_1 = nn.BCEWithLogitsLoss()
+        loss_fn_2 = nn.CrossEntropyLoss()
+        positive_logits, attn_map, _ = self.calc_logits(feature_emb)
+
+        clsid_mask = databatch['clsid_mask'].flatten(1).long().to(self.device)    # (bs, num_tokens)
+        multi_pos_label = databatch['multi_pos_label'].to(self.device)     # (bs, pos_cls)
+        pos_loss = loss_fn_1(positive_logits, multi_pos_label)
+        cls_loss = loss_fn_2(attn_map.permute(0, 2, 1), clsid_mask)
+
+        loss = pos_loss + cls_loss
         loss_dict = {
-            'pn_loss': pn_loss.item(),
+            # 'feat_loss': feat_loss.item(),
             'pos_loss': pos_loss.item(),
+            'cls_loss': cls_loss.item(),
         }
         return loss,loss_dict
 
-    def set_pred(self,feature_emb, databatch):
-        pred_logits,attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
-        img_pn_logit = pred_logits[:, 0]
-        positive_logits = pred_logits[:, 1:]
+    # def set_pred(self,feature_emb, databatch):
+    #     # feat_logits,attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
+    #     attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
+    #     attn_map = F.softmax(attn_map, dim=-1)    # (bs, n_cls, h, w)
+    #     # max_probs 的 shape 是 (bs, num_tokens)，即每个位置的预测概率
+    #     # predicted_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引：0:阴性/未知,其他都是阳性
+    #     max_probs, predicted_classes = torch.max(attn_map, dim=-1)
+    #     databatch['token_probs'] = max_probs   # (bs, num_tokens)
+    #     databatch['token_classes'] = predicted_classes # (bs, num_tokens)
+    #     return databatch
 
-        databatch['img_probs'] = torch.sigmoid(img_pn_logit).squeeze(-1)   # (bs, )
+    def set_pred(self, feature_emb, databatch):
+        positive_logits, attn_map, _ = self.calc_logits(feature_emb)
         databatch['pos_probs'] = torch.sigmoid(positive_logits) # (bs, num_classes-1)
-        databatch['attn_array'] = attn_array # (bs, num_classes, num_tokens)
         return databatch

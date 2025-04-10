@@ -3,25 +3,27 @@ from PIL import Image
 from torch.utils.data import Dataset
 import json
 import numpy as np
+import torch.nn.functional as F
 
 # 自定义数据集类
 class ClsDataset(Dataset):
-    def __init__(self, root_dir, annojson_path, transform, classes):
+    def __init__(self, root_dir, annojson_path, transform, classes, gt_mask_size):
         """
         Args:
             img_dir (str): img dir
         """
-
-        self.img_dir = f'{root_dir}/images'
+        # self.img_dir = f'{root_dir}/images'
+        # self.mask_dir = f'{root_dir}/mask'
+        self.root_dir = root_dir
         self.annofiles_dir = f'{root_dir}/annofiles'
-
-        with open(annojson_path, 'r') as f:
+        with open(f'{self.annofiles_dir}/{annojson_path}', 'r') as f:
             self.patch_infolist = json.load(f)
             # self.patch_infolist = self.patch_infolist[:10000]
         
         self.transform = transform
         self.num_classes = len(classes)
         self.classes = classes
+        self.gt_mask_size = gt_mask_size
 
     def __len__(self):
         return len(self.patch_infolist)
@@ -29,28 +31,43 @@ class ClsDataset(Dataset):
     def __getitem__(self, idx):
         imginfo = self.patch_infolist[idx]
         
-        imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
+        imgpath = f'{self.root_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
+        imginfo['imgpath'] = imgpath
         image = Image.open(imgpath)
 
         input_tensor = self.transform(image)
         image_label = imginfo['diagnose']
-        multi_pos_labels = self.get_mliti_pos_labels(imginfo)
-        # 0为阴性，阳性id都会大于0
-        gt_bboxes_clsid = [self.classes.index(name) for name in imginfo['clsnames']]
-        clsid_mask = self.generate_bbox_mask(imginfo['bboxes'], gt_bboxes_clsid, image.size)
-        imginfo['imgpath'] = imgpath
-        return input_tensor,image_label,multi_pos_labels,clsid_mask,imginfo
-
-    def get_mliti_pos_labels(self, imginfo):
-        # GT阳性类别id范围为 [1,5], pred阳性类别id范围为 [0,4]
-        multi_pos_labels = torch.zeros((self.num_classes-1,))
-        if 'gtmap_14' in imginfo:
-            label_list = list(set([tk[-1]-1 for tk in imginfo['gtmap_14']]))
-        else:
-            label_list = list(set([i-1 for i in imginfo['clsid']]))
-        multi_pos_labels[label_list] = 1
-        return multi_pos_labels
+        clsid_mask,multi_pos_label = self.generate_clsid_mask(imginfo, image.size)
+        
+        return input_tensor,image_label,clsid_mask,multi_pos_label,imginfo
     
+    def generate_clsid_mask(self, imginfo, shape):
+        w, h = shape
+        image_label = imginfo['diagnose']
+        multi_pos_label = torch.zeros((self.num_classes-1,), dtype=torch.float32)
+        
+        if image_label == 0:
+            gt_mask = torch.ones((h,w), dtype=torch.int32)
+        else:
+            purename = imginfo["filename"].split('.')[0]
+            tag_dir = imginfo["prefix"].split('/')[0]
+            data = np.load(f'{self.root_dir}/{tag_dir}/masks/{purename}.npz')
+            nonzero_indices = data['indices']
+            nonzero_values = data['values']  # 1代表阴性，>1 代表阳性
+            shape = tuple(data['shape'])
+            restored_gt_mask = np.zeros((h,w), dtype=int)
+            restored_gt_mask[nonzero_indices[0], nonzero_indices[1]] = nonzero_values
+            gt_mask = torch.as_tensor(restored_gt_mask)
+            pos_label_list = [i-2 for i in list(set(nonzero_values))]   # [0,4]
+            multi_pos_label[pos_label_list] = 1
+
+        gt_mask = gt_mask.unsqueeze(0).unsqueeze(0).float()  # shape: (1, 1, H, W)
+        # 使用最近邻插值 resize 到 (32, 32)
+        resized_mask = F.interpolate(gt_mask, size=self.gt_mask_size, mode='nearest')
+        resized_mask = resized_mask.squeeze(0).squeeze(0).to(torch.int32)
+
+        return resized_mask,multi_pos_label
+
     def generate_bbox_mask(self, bboxes, bboxes_clsid, shape):
         """
         生成一个形状为 shape 的矩阵，初始为 0，
@@ -72,3 +89,4 @@ class ClsDataset(Dataset):
             mask[y1:y2, x1:x2] = class_id  # 填充类别 ID
         
         return mask
+    

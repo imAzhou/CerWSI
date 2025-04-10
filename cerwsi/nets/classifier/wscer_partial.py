@@ -2,9 +2,10 @@ import torch
 from torch import Tensor, nn
 import math
 import torch.nn.functional as F
-from typing import Tuple, Type
+from typing import List, Tuple, Type
 from .feat_pe import get_feat_pe
 from .meta_classifier import MetaClassifier
+from ..backbone.SAM.common import LayerNorm2d,MLP
 from cerwsi.utils import build_evaluator,TokenMetric
 
 class MLPBlock(nn.Module):
@@ -166,7 +167,7 @@ class WSCerPartial(MetaClassifier):
         self.num_classes = num_classes
         self.token_sample_num = 100
 
-        self.conv_fc = nn.Linear(input_embed_dim, 1)
+        # self.conv_fc = nn.Linear(input_embed_dim, 1)
         self.cls_tokens = nn.Embedding(num_classes, input_embed_dim)
         self.layers = nn.ModuleList()
         for i in range(depth):
@@ -180,6 +181,17 @@ class WSCerPartial(MetaClassifier):
                     skip_first_layer_pe=(i == 0),
                 )
             )
+        self.output_upscaling = nn.Sequential(
+            nn.ConvTranspose2d(input_embed_dim, input_embed_dim // 4, kernel_size=2, stride=2),
+            LayerNorm2d(input_embed_dim // 4),
+            nn.GELU(),
+        )
+        self.output_hypernetworks_mlps = nn.ModuleList(
+            [
+                MLP(input_embed_dim, input_embed_dim, input_embed_dim // 4, 3)
+                for i in range(self.num_classes)
+            ]
+        )
 
     def calc_logits(self, img_tokens: torch.Tensor):
         bs, num_tokens, embed_dim = img_tokens.shape
@@ -191,7 +203,7 @@ class WSCerPartial(MetaClassifier):
             key_pe = get_feat_pe(self.pos_add_type, embed_dim, (feat_size,feat_size))
             key_pe = key_pe.flatten(2).permute(0, 2, 1).to(self.device)
 
-        feat_logits = self.conv_fc(img_tokens)  # (bs, num_tokens, 1)
+        # feat_logits = self.conv_fc(img_tokens)  # (bs, num_tokens, 1)
 
         attn_array = []
         for layer in self.layers:
@@ -205,19 +217,32 @@ class WSCerPartial(MetaClassifier):
             attn_score = torch.mean(attn_out_q, dim=1)
             attn_array.append(attn_score)
         
+        img_tokens = img_tokens.transpose(1, 2).view(bs, embed_dim, feat_size, feat_size)
+        upscaled_embedding = self.output_upscaling(img_tokens)
+        hyper_in_list: List[torch.Tensor] = []
+        for i in range(self.num_classes):
+            hyper_in_list.append(self.output_hypernetworks_mlps[i](queries[:, i, :]))
+        hyper_in = torch.stack(hyper_in_list, dim=1)
+        b, c, h, w = upscaled_embedding.shape
+        attn_map = (hyper_in @ upscaled_embedding.view(b, c, h * w))   # (bs, n_cls, num_tokens)
+
         # queries: (bs, n_cls, dim), img_tokens: (bs, num_tokens, dim)
-        attn_map = torch.bmm(img_tokens, queries.transpose(1, 2))   # (bs, num_tokens, n_cls)
+        # attn_map = torch.bmm(img_tokens, queries.transpose(1, 2))   # (bs, num_tokens, n_cls)
         # attn_map = attn_map / math.sqrt(embed_dim)
-        attn_array.append(attn_map.transpose(1, 2))
+        # attn_array.append(attn_map)
         attn_array = torch.stack(attn_array, dim=1)
-        return feat_logits, attn_map, attn_array
+        # return feat_logits, attn_map.transpose(1, 2), attn_array
+        return attn_map.transpose(1, 2), attn_array
     
     def create_feat_gt(self, logits_shape, image_labels, clsid_mask):
+        '''
+        clsid_mask: 0-未知，1-阴性，{2,3,4,5,6}-阳性
+        '''
         bs,num_tokens,_ = logits_shape
         feat_gt = torch.zeros((bs, num_tokens)).to(self.device)
         balanced_mask = torch.zeros((bs, num_tokens)).to(self.device)
-        pos_tokens_nums = torch.sum(clsid_mask > 0).item()  # mini batch 中的阳性 token 数量
-        neg_tokens_nums = pos_tokens_nums*2 # 负样本数目是阳性样本的两倍
+        pos_tokens_nums = torch.sum(clsid_mask > 1).item()  # mini batch 中的阳性 token 数量
+        neg_tokens_nums = pos_tokens_nums*2 # 从阴性图片中采样的负样本数目是阳性样本的两倍
         max_chosen_num = 4096
 
         if pos_tokens_nums == 0:
@@ -239,18 +264,25 @@ class WSCerPartial(MetaClassifier):
                 neg_indices = torch.randperm(num_tokens)[:keep_neg_nums]
                 balanced_mask[bidx, neg_indices] = 1
             else:
-                pos_indices = torch.nonzero(cmask > 0, as_tuple=True)[0]  # 获取 cmask > 0 的索引
+                neginpos_indices = torch.nonzero(cmask == 1, as_tuple=True)[0]  # 获取阴性 token 的索引
+                pos_indices = torch.nonzero(cmask > 1, as_tuple=True)[0]  # 获取阳性 token 的索引
+                num_samples = len(pos_indices)*3
+                # 打乱并最多采样阳性 token 数量的三倍
+                perm = torch.randperm(neginpos_indices.size(0))
+                sampled_indices = neginpos_indices[perm[:num_samples]]
+                balanced_mask[bidx, sampled_indices] = 1
                 feat_gt[bidx, pos_indices] = 1
                 balanced_mask[bidx, pos_indices] = 1
         # print(f'pos_tokens_nums:{pos_tokens_nums}, neg_tokens_nums:{neg_tokens_nums}, balanced_mask.sum():{balanced_mask.sum()}')
         # Ensure balanced_mask.sum() equals 1000, if greater, randomly zero out some entries
-        balanced_mask_sum = balanced_mask.sum()
-        if balanced_mask_sum > max_chosen_num:
-            excess_tokens = (balanced_mask_sum - max_chosen_num).int()
-            balanced_mask_flat = balanced_mask.view(-1)
-            indices_to_zero = torch.randperm(balanced_mask_flat.numel())[:excess_tokens]
-            balanced_mask_flat[indices_to_zero] = 0
-            balanced_mask = balanced_mask_flat.view(bs, num_tokens)
+        # balanced_mask_sum = balanced_mask.sum()
+        # print(f'balanced_mask_sum: {balanced_mask_sum}')
+        # if balanced_mask_sum > max_chosen_num:
+        #     excess_tokens = (balanced_mask_sum - max_chosen_num).int()
+        #     balanced_mask_flat = balanced_mask.view(-1)
+        #     indices_to_zero = torch.randperm(balanced_mask_flat.numel())[:excess_tokens]
+        #     balanced_mask_flat[indices_to_zero] = 0
+        #     balanced_mask = balanced_mask_flat.view(bs, num_tokens)
 
         return feat_gt,balanced_mask
     
@@ -258,38 +290,39 @@ class WSCerPartial(MetaClassifier):
         loss_fn_1 = nn.BCEWithLogitsLoss(reduction='none')
         loss_fn_2 = nn.CrossEntropyLoss(reduction='none')
 
-        feat_logits, attn_map, _ = self.calc_logits(feature_emb)
-        bs, num_tokens, _ = feat_logits.shape
-        feat_size = int(math.sqrt(num_tokens))
-        clsid_mask = F.interpolate(databatch['clsid_mask'].unsqueeze(1).float(), size=(feat_size,feat_size), mode='nearest')
-        clsid_mask = clsid_mask.flatten(1).long().to(self.device)    # (bs, num_tokens)
-        
-        feat_gt,balanced_mask = self.create_feat_gt(feat_logits.shape, databatch['image_labels'], clsid_mask)
-        loss_per_token = loss_fn_1(feat_logits.view(bs * num_tokens), feat_gt.view(bs * num_tokens))
-        loss_per_token = loss_per_token.view(bs, num_tokens)
-        feat_loss = loss_per_token * balanced_mask
-        feat_loss = feat_loss.sum() / balanced_mask.sum().float()
-        if torch.isnan(feat_loss).any():
-            print(f"Warning: NaN detected in feat_loss! feat_loss.sum()={feat_loss.sum()}, balanced_mask.sum()={balanced_mask.sum()}")
+        # feat_logits, attn_map, _ = self.calc_logits(feature_emb)
+        attn_map, _ = self.calc_logits(feature_emb)
+        # bs, num_tokens, _ = feat_logits.shape
 
+        clsid_mask = databatch['clsid_mask'].flatten(1).long().to(self.device)    # (bs, num_tokens)
+        feat_gt,balanced_mask = self.create_feat_gt(attn_map.shape, databatch['image_labels'], clsid_mask)
+        # loss_per_token = loss_fn_1(feat_logits.view(bs * num_tokens), feat_gt.view(bs * num_tokens))
+        # loss_per_token = loss_per_token.view(bs, num_tokens)
+        # feat_loss = loss_per_token * balanced_mask
+        # feat_loss = feat_loss.sum() / balanced_mask.sum().float()
+        # if torch.isnan(feat_loss).any():
+        #     print(f"Warning: NaN detected in feat_loss! feat_loss.sum()={feat_loss.sum()}, balanced_mask.sum()={balanced_mask.sum()}")
+
+        clsid_mask[clsid_mask != 0] -= 1    # 规范 gt mask 的值属于 [0,1,2,3,4,5]
         cls_loss = loss_fn_2(attn_map.permute(0, 2, 1), clsid_mask)
         cls_loss = cls_loss * balanced_mask
         cls_loss = cls_loss.sum() / balanced_mask.sum().float()
         if torch.isnan(cls_loss).any():
             print(f"Warning: NaN detected in cls_loss! cls_loss.sum()={cls_loss.sum()}, balanced_mask.sum()={balanced_mask.sum()}")
 
-        loss = feat_loss + cls_loss
+        # loss = feat_loss + cls_loss
         loss_dict = {
-            'feat_loss': feat_loss.item(),
+            # 'feat_loss': feat_loss.item(),
             'cls_loss': cls_loss.item(),
         }
-        return loss,loss_dict
+        return cls_loss,loss_dict
 
     def set_pred(self,feature_emb, databatch):
-        feat_logits,attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
+        # feat_logits,attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
+        attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
         attn_map = F.softmax(attn_map, dim=-1)  # (bs, num_tokens, n_cls)
         # max_probs 的 shape 是 (bs, num_tokens)，即每个位置的预测概率
-        # predicted_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引
+        # predicted_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引：0:阴性/未知,其他都是阳性
         max_probs, predicted_classes = torch.max(attn_map, dim=-1)
         databatch['token_probs'] = max_probs   # (bs, num_tokens)
         databatch['token_classes'] = predicted_classes # (bs, num_tokens)

@@ -49,7 +49,6 @@ def test_net(cfg, model):
             elif 'token_classes' in outputs:
                 pred_cls = torch.max(outputs['token_classes'][bidx], dim=-1)[0]
                 pred_label = (pred_cls > 0).int().item()
-            print(pred_label)
             predict_rsults.append((patientId,filename,pred_label))
 
     results = collect_results(predict_rsults, len(valloader.dataset))
@@ -119,7 +118,7 @@ if __name__ == '__main__':
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_wsi_offline.py \
     /c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv \
-    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/config.py \
-    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05/checkpoints/best.pth \
-    log/l_cerscan_v2/wscer_partial/2025_04_01_17_04_05
+    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29/config.py \
+    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29/checkpoints/best.pth \
+    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29
 '''

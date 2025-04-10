@@ -44,7 +44,8 @@ class DTCWTModule(nn.Module):
         return torch.einsum('...bd,bdk->...bk', input, weights)
 
     def forward(self, input_x: torch.Tensor) -> torch.Tensor:
-        
+        origin_x = input_x
+
         B, H, W, C = input_x.shape
         input_x = input_x.permute(0,3,1,2)
         xl,xh = self.xfm(input_x)
@@ -69,7 +70,8 @@ class DTCWTModule(nn.Module):
         dtcwt_x = self.ifm((xl,xh)) # (bs, C, h, w)
         dtcwt_x = dtcwt_x.permute(0,2,3,1)
 
-        return dtcwt_x
+        output_x = origin_x + dtcwt_x
+        return output_x
    
 
 class AttentionDTCWT(nn.Module):

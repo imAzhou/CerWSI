@@ -185,12 +185,10 @@ class WSCerPartial(MetaClassifier):
             nn.ConvTranspose2d(input_embed_dim, input_embed_dim // 4, kernel_size=2, stride=2),
             LayerNorm2d(input_embed_dim // 4),
             nn.GELU(),
-            nn.ConvTranspose2d(input_embed_dim // 4, input_embed_dim // 8, kernel_size=2, stride=2),
-            nn.GELU(),
         )
         self.output_hypernetworks_mlps = nn.ModuleList(
             [
-                MLP(input_embed_dim, input_embed_dim, input_embed_dim // 8, 3)
+                MLP(input_embed_dim, input_embed_dim, input_embed_dim // 4, 3)
                 for i in range(self.num_classes)
             ]
         )
@@ -268,8 +266,12 @@ class WSCerPartial(MetaClassifier):
             else:
                 neginpos_indices = torch.nonzero(cmask == 1, as_tuple=True)[0]  # 获取阴性 token 的索引
                 pos_indices = torch.nonzero(cmask > 1, as_tuple=True)[0]  # 获取阳性 token 的索引
+                num_samples = len(pos_indices)*3
+                # 打乱并最多采样阳性 token 数量的三倍
+                perm = torch.randperm(neginpos_indices.size(0))
+                sampled_indices = neginpos_indices[perm[:num_samples]]
+                balanced_mask[bidx, sampled_indices] = 1
                 feat_gt[bidx, pos_indices] = 1
-                balanced_mask[bidx, neginpos_indices] = 1
                 balanced_mask[bidx, pos_indices] = 1
         # print(f'pos_tokens_nums:{pos_tokens_nums}, neg_tokens_nums:{neg_tokens_nums}, balanced_mask.sum():{balanced_mask.sum()}')
         # Ensure balanced_mask.sum() equals 1000, if greater, randomly zero out some entries

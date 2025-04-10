@@ -12,9 +12,9 @@ class ClsDataset(Dataset):
         Args:
             img_dir (str): img dir
         """
-
-        self.img_dir = f'{root_dir}/images'
-        self.mask_dir = f'{root_dir}/mask'
+        # self.img_dir = f'{root_dir}/images'
+        # self.mask_dir = f'{root_dir}/mask'
+        self.root_dir = root_dir
         self.annofiles_dir = f'{root_dir}/annofiles'
         with open(f'{self.annofiles_dir}/{annojson_path}', 'r') as f:
             self.patch_infolist = json.load(f)
@@ -31,7 +31,7 @@ class ClsDataset(Dataset):
     def __getitem__(self, idx):
         imginfo = self.patch_infolist[idx]
         
-        imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
+        imgpath = f'{self.root_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
         imginfo['imgpath'] = imgpath
         image = Image.open(imgpath)
 
@@ -47,17 +47,18 @@ class ClsDataset(Dataset):
         multi_pos_label = torch.zeros((self.num_classes-1,), dtype=torch.float32)
         
         if image_label == 0:
-            gt_mask = torch.zeros((h,w), dtype=torch.int32)
+            gt_mask = torch.ones((h,w), dtype=torch.int32)
         else:
             purename = imginfo["filename"].split('.')[0]
-            data = np.load(f'{self.mask_dir}/{purename}.npz')
+            tag_dir = imginfo["prefix"].split('/')[0]
+            data = np.load(f'{self.root_dir}/{tag_dir}/masks/{purename}.npz')
             nonzero_indices = data['indices']
-            nonzero_values = data['values']
+            nonzero_values = data['values']  # 1代表阴性，>1 代表阳性
             shape = tuple(data['shape'])
             restored_gt_mask = np.zeros((h,w), dtype=int)
             restored_gt_mask[nonzero_indices[0], nonzero_indices[1]] = nonzero_values
             gt_mask = torch.as_tensor(restored_gt_mask)
-            pos_label_list = [i-1 for i in list(set(nonzero_values))]   # [0,4]
+            pos_label_list = [i-2 for i in list(set(nonzero_values))]   # [0,4]
             multi_pos_label[pos_label_list] = 1
 
         gt_mask = gt_mask.unsqueeze(0).unsqueeze(0).float()  # shape: (1, 1, H, W)

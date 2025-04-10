@@ -51,14 +51,14 @@ if __name__ == '__main__':
             imginfo['prefix'] = '0403jfsw/images/' + imginfo['prefix']
             total_imginfo.append(imginfo)
             original_pn_cnt[imginfo['diagnose']] += 1
-            # if imginfo['diagnose'] == 1:
-            #     src_path = f'data_resource/0403/images/{prefix}'
-            # else:
-            #     src_path = f'data_resource/0319/images/{prefix}'
-            # shutil.move(
-            #     f'{src_path}/{imginfo["filename"]}',
-            #     f'data_resource/0410/{imginfo["prefix"]}/{imginfo["filename"]}'
-            # )
+            if imginfo['diagnose'] == 1:
+                src_path = f'data_resource/0403/images/{prefix}'
+            else:
+                src_path = f'data_resource/0319/images/{prefix}'
+            shutil.move(
+                f'{src_path}/{imginfo["filename"]}',
+                f'data_resource/0410/{imginfo["prefix"]}/{imginfo["filename"]}'
+            )
         
         for imginfo in tqdm(zheyiroi_anno, ncols=80):
             prefix = imginfo["prefix"]

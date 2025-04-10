@@ -132,13 +132,13 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12340 main4PatchClsNet.py \
-    configs/dataset/zheyi_roi_dataset.py \
-    configs/model/wscer_alltoken.py \
+    configs/dataset/l_cerscanv3_dataset.py \
+    configs/model/wscer_partial.py \
     configs/strategy.py \
-    --record_save_dir log/zheyi_roi/wscer_alltoken
+    --record_save_dir log/l_cerscanv3/wscer_partial
 
 CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 main4PatchClsNet.py \
-    configs/dataset/l_cerscanv2_dataset.py \
+    configs/dataset/l_cerscanv3_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
     --record_save_dir log/debug

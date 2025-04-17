@@ -155,9 +155,9 @@ def gene_ann_json():
             }
             total_kfbInfo.append(kfbInfo)
     
-    # df_train = pd.concat([df_train, pd.DataFrame(new_train_rows)], ignore_index=True)
-    # df_train.to_csv(train_csv_file, index=False)
-    # df_test.to_csv(test_csv_file, index=False)
+    df_train = pd.concat([df_train, pd.DataFrame(new_train_rows)], ignore_index=True)
+    df_train.to_csv(train_csv_file, index=False)
+    df_test.to_csv(test_csv_file, index=False)
 
     return total_kfbInfo
 
@@ -166,15 +166,15 @@ if __name__ == '__main__':
     
     save_ann_json = 'data_resource/0328/annofiles/zheyi_slide_4fusion.json'
 
-    # total_slideInfo = gene_ann_json()
+    total_slideInfo = gene_ann_json()
     # analyze_patchlist(total_slideInfo)
     # with open(save_ann_json,'w') as f:
     #     json.dump(total_slideInfo, f)
     
-    with open(save_ann_json,'r') as f:
-        total_slideInfo = json.load(f)
-    # cut_patchlist(total_slideInfo)
-    analyze_patchlist(total_slideInfo)
+    # with open(save_ann_json,'r') as f:
+    #     total_slideInfo = json.load(f)
+    # # cut_patchlist(total_slideInfo)
+    # analyze_patchlist(total_slideInfo)
 
 '''
 Neg,Pos

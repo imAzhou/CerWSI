@@ -5,6 +5,13 @@ RESNET = dict(
     use_peft = None,
 )
 
+CTRANSPATH = dict(
+    backbone_output_dim = [768],
+    backbone_ckpt = 'checkpoints/ctranspath.pth',
+    frozen_backbone = False,
+    use_peft = None,
+)
+
 UNICONFIG = dict(
     backbone_output_dim = [1024],
     backbone_ckpt = 'checkpoints/uni.bin',
@@ -19,7 +26,7 @@ SAMCONFIG = dict(
     backbone_size_type = 'vit_b',
     frozen_backbone = True,
     use_peft = 'lora', 
-    use_dtcwt_indexes = [],
+    use_dtcwt_indexes = [0,1],
     vit_patch_size = 16
 )
 

@@ -4,12 +4,12 @@ from .meta_backbone import MetaBackbone
 from .CTransPath import SwinTransformer
 
 class CTransPath(MetaBackbone):
-    def __init__(self, **args):
+    def __init__(self, args):
         super(CTransPath, self).__init__()
         self.backbone = SwinTransformer()
         output_embed_dim = 768
         num_tokens = 7*7
-        super(CTransPath, self).__init__(output_embed_dim, num_tokens, **args)
+        super(CTransPath, self).__init__(args)
 
     def load_backbone(self, ckpt):
         params_weight = torch.load(ckpt, map_location=self.device)

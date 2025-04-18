@@ -191,9 +191,9 @@ def save_slide_result(csv_file, predInfo, pos_thr, slide_pos_ratio, save_path, p
         f.writelines(txt_lines)
 
 if __name__ == '__main__':
-    root_dir = 'log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29'
+    root_dir = 'log/l_cerscanv3/wscer_partial/2025_04_10_16_07_44'
     # csv_file = 'data_resource/slide_anno/0319/val.csv'
-    csv_file = '/c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv'
+    csv_file = '/c22073/zly/datasets/CervicalDatasets/LCerScanv3/annofiles/val.csv'
 
     with open(f'{root_dir}/slide_pred_result.json', 'r') as f:
         predInfo = json.load(f)

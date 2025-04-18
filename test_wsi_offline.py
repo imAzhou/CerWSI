@@ -117,8 +117,8 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_wsi_offline.py \
-    /c22073/zly/datasets/CervicalDatasets/LCerScanv2/annofiles/val.csv \
-    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29/config.py \
-    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29/checkpoints/best.pth \
-    log/l_cerscan_v2/wscer_partial/2025_04_06_09_55_29
+    /c22073/zly/datasets/CervicalDatasets/LCerScanv3/annofiles/val.csv \
+    log/l_cerscanv3/wscer_partial/2025_04_10_16_07_44/config.py \
+    log/l_cerscanv3/wscer_partial/2025_04_10_16_07_44/checkpoints/best.pth \
+    log/l_cerscanv3/wscer_partial/2025_04_10_16_07_44
 '''

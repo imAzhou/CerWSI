@@ -1,6 +1,7 @@
 import matplotlib
 import torch
 import os
+from torchvision.ops import nms
 from tqdm import tqdm
 import torch.distributed as dist
 import math
@@ -37,7 +38,6 @@ parser.add_argument('--dist_url', default='env://', help='url used to set up dis
 
 args = parser.parse_args()
 
-
 def draw_vis(img,bboxes_coords, bboxes_clsname,token_classes_resized,token_probs_resized,output_path):
     h,w = img.size
     # 创建画布
@@ -61,13 +61,68 @@ def draw_vis(img,bboxes_coords, bboxes_clsname,token_classes_resized,token_probs
     axes[1].imshow(img)
     overlay = np.zeros((h, w, 4))  # RGBA
     classname_denote = []
+    total_bboxes = []
     for class_id in range(1, len(POSITIVE_CLASS) + 1):  # 只处理 > 0 的类别
         mask = (token_classes_resized == class_id)
         if np.sum(mask) > 0:
             classname_denote.append(class_id)
-            color = np.array(matplotlib.colors.to_rgba(CLS_COLORS[POSITIVE_CLASS[class_id - 1]], alpha=0.8))
-            overlay[mask] = color  # 叠加颜色
-    axes[1].imshow(overlay)
+            cls_name = POSITIVE_CLASS[class_id - 1]
+            # 获取连通区域的外接矩形框
+            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+            bboxes = []
+            scores = []
+            for i in range(1, num_labels):  # 跳过背景
+                x, y, bwidth, bheight, _ = stats[i]
+                x1, y1, x2, y2 = x, y, x + bwidth, y + bheight
+                if bwidth < 50 and bheight < 50:
+                    center_x = (x1 + x2) / 2
+                    center_y = (y1 + y2) / 2
+                    x1, y1 = center_x-25,center_y-25
+                    x2, y2 = center_x+25,center_y+25
+                
+                # 提取第 i 个连通区域的 mask（按 label）
+                region_mask = (labels == i)
+                region_probs = token_probs_resized[region_mask]
+                max_score = float(np.max(region_probs)) if region_probs.size > 0 else 0.0
+                bboxes.append([x1, y1, x2, y2])
+                scores.append(max_score)
+
+            boxes_tensor = torch.tensor(bboxes, dtype=torch.float32)
+            scores_tensor = torch.tensor(scores, dtype=torch.float32)
+            keep = nms(boxes_tensor, scores_tensor, iou_threshold=0.7)
+            kept_boxes = boxes_tensor[keep].numpy()
+            kept_boxes_score = scores_tensor[keep].numpy()
+            
+            for coord,score in zip(kept_boxes, kept_boxes_score):
+                total_bboxes.append({
+                    'coord':coord,
+                    'score':score,
+                    'clsname':cls_name,
+                })
+
+    if len(total_bboxes) > 20:
+        class_order = POSITIVE_CLASS[::-1]  # ['HSIL', 'ASC-H', 'LSIL', 'ASC-US', 'AGC']
+        # 排序：先按 clsname 在 class_order 中的索引，再按 score 降序
+        total_bboxes_sorted = sorted(
+            total_bboxes,
+            key=lambda x: (class_order.index(x['clsname']), -x['score'])
+        )
+        top_bbox = total_bboxes_sorted[0]
+        total_bboxes = [{
+            'coord':[0,0,w,h],
+            'score':top_bbox['score'],
+            'clsname':top_bbox['clsname'],
+        }]
+    
+    for boxitem in total_bboxes:
+        x1, y1, x2, y2 = boxitem['coord']
+        width, height = x2 - x1, y2 - y1
+        color = np.array(matplotlib.colors.to_rgba(CLS_COLORS[boxitem['clsname']], alpha=0.8))
+        # overlay[mask] = color  # 叠加颜色
+        rect = plt.Rectangle((x1, y1), width, height, linewidth=2, edgecolor=color[:3], facecolor='none')
+        axes[1].add_patch(rect)
+        
+    # axes[1].imshow(overlay)
     axes[1].set_title(f"Token Classes: {classname_denote}")
     axes[1].axis("off")
 
@@ -146,12 +201,12 @@ def main():
 
 if __name__ == '__main__':
 
-    vis_save_dir = 'statistic_results/WSI_heatmap_alltoken'
+    vis_save_dir = 'statistic_results/WSI_heatmap_partial'
     os.makedirs(vis_save_dir, exist_ok=True)
     main()
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12346 scripts/analyze/vis_token_pred.py \
-    log/zheyi_roi/wscer_alltoken/2025_04_08_22_15_06/config.py \
-    log/zheyi_roi/wscer_alltoken/2025_04_08_22_15_06/checkpoints/best.pth
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12346 scripts/analyze/vis_token_pred.py \
+    log/l_cerscan_v3/wscer_partial/config.py \
+    log/l_cerscan_v3/wscer_partial/checkpoints/best.pth
 '''

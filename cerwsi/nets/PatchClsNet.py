@@ -19,6 +19,7 @@ class PatchClsNet(nn.Module):
         self.backbone_nograd = frozen_backbone and use_peft is None
 
         self.split_group = cfg.split_group
+        self.img_size = cfg.img_size
         
     @property
     def device(self):

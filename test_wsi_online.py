@@ -6,6 +6,8 @@ import time
 from mmpretrain.structures import DataSample
 import argparse
 import cv2
+import math
+from torchvision.ops import nms
 from mmengine.config import Config
 from math import ceil
 import numpy as np
@@ -18,17 +20,18 @@ import os
 import copy
 from torchvision import transforms
 from mmengine.logging import MMLogger
-from cerwsi.utils import (KFBSlide, set_seed,)
+from cerwsi.utils import KFBSlide, set_seed
 from cerwsi.nets import ValidClsNet, PatchClsNet
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
 LEVEL = 1
-PATCH_EDGE = 700
+PATCH_EDGE = 512
 CERTAIN_THR = 0.7
 NEGATIVE_THR = 0.5
 positive_ratio_thr = 0.05
+POSITIVE_CLASS = ['AGC', 'ASC-US','LSIL', 'ASC-H', 'HSIL']
 
 def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix):
     data_batch = dict(inputs=[], data_samples=[])
@@ -65,41 +68,104 @@ def inference_valid_batch(valid_model, read_result_pool, curent_id, save_prefix)
 
     return valid_idx
 
-def inference_batch_pn(pn_model, valid_input, save_prefix):
+def format_bboxes(outputs, bidx, downsample_ratio, pcoords):
+    sx1,sy1,sx2,sy2 = pcoords   # patch 块在 Slide 中的坐标
+    token_probs,token_classes = outputs['token_probs'][bidx],outputs['token_classes'][bidx]
+    feat_size = int(math.sqrt(token_probs.shape[0]))
+    token_classes = token_classes.reshape((feat_size, feat_size)).detach().cpu().numpy()
+    token_classes_resized = cv2.resize(token_classes, (PATCH_EDGE, PATCH_EDGE), interpolation=cv2.INTER_NEAREST)
+    token_probs = token_probs.reshape((feat_size, feat_size)).detach().cpu().numpy()
+    token_probs_resized = cv2.resize(token_probs, (PATCH_EDGE, PATCH_EDGE), interpolation=cv2.INTER_LINEAR)
+    total_bboxes = []
+    for class_id in range(1, len(POSITIVE_CLASS) + 1):  # 只处理 > 0 的类别
+        mask = (token_classes_resized == class_id)
+        if np.sum(mask) > 0:
+            cls_name = POSITIVE_CLASS[class_id - 1]
+            # 获取连通区域的外接矩形框
+            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+            bboxes = []
+            scores = []
+            for i in range(1, num_labels):  # 跳过背景
+                x, y, bwidth, bheight, _ = stats[i]
+                x1, y1, x2, y2 = x, y, x + bwidth, y + bheight
+                if bwidth < 50 and bheight < 50:
+                    center_x = (x1 + x2) / 2
+                    center_y = (y1 + y2) / 2
+                    x1, y1 = center_x-25,center_y-25
+                    x2, y2 = center_x+25,center_y+25
+                
+                # 提取第 i 个连通区域的 mask（按 label）
+                region_mask = (labels == i)
+                region_probs = token_probs_resized[region_mask]
+                max_score = float(np.max(region_probs)) if region_probs.size > 0 else 0.0
+                bboxes.append((np.array([x1, y1, x2, y2]))*downsample_ratio)   # bbox 坐标 (在 LEVEL=0 上的坐标)
+                scores.append(max_score)
+
+            boxes_tensor = torch.tensor(np.array(bboxes), dtype=torch.float32)
+            scores_tensor = torch.tensor(scores, dtype=torch.float32)
+            keep = nms(boxes_tensor, scores_tensor, iou_threshold=0.7)
+            kept_boxes = boxes_tensor[keep].numpy()
+            kept_boxes_score = scores_tensor[keep].numpy()
+            
+            for coord,score in zip(kept_boxes, kept_boxes_score):
+                bx1,by1,bx2,by2 = coord.tolist()
+                total_bboxes.append({
+                    'coord': [bx1+sx1,by1+sy1,bx2+sx1,by2+sy1],
+                    'score': float(score),
+                    'clsname': cls_name,
+                })
+    class_order = POSITIVE_CLASS[::-1]  # ['HSIL', 'ASC-H', 'LSIL', 'ASC-US', 'AGC']
+    # 排序：先按 clsname 在 class_order 中的索引，再按 score 降序
+    total_bboxes_sorted = sorted(
+        total_bboxes,
+        key=lambda x: (class_order.index(x['clsname']), -x['score'])
+    )
+    if len(total_bboxes) > 20:
+        top_bbox = total_bboxes_sorted[0]
+        
+        total_bboxes_sorted = [{
+            'coord': pcoords,
+            'score': top_bbox['score'],
+            'clsname': top_bbox['clsname'],
+        }]   
+    return total_bboxes_sorted
+
+def inference_batch_pn(pn_model, valid_input, save_prefix, downsample_ratio):
     transform = transforms.Compose([
-        transforms.Resize(224),
+        transforms.Resize(pn_model.img_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
-    img_inputs = [transform(read_result) for read_result in valid_input]
-    images_tensor = torch.stack(img_inputs, dim=0)
+    img_inputs = [transform(item['image']) for item in valid_input]
+    images_tensor = torch.stack(img_inputs, dim=0).to(pn_model.device)
     data_batch = dict(images=images_tensor)
 
     with torch.no_grad():
         outputs = pn_model(data_batch, 'val')
-    if outputs['img_probs'].numel() == 1:
-        outputs['img_probs'] = outputs['img_probs'].unsqueeze(0)
+    
     pred_result = []
-    for idx,pred_output in enumerate(outputs['img_probs']):
-        o_img = valid_input[idx]
-        pred_clsid = 1 if int(pred_output > NEGATIVE_THR) else 0
-        # 0/1，img_probs，*cls_pos_probs
-        res_arr = [pred_clsid, round(pred_output.detach().item(), 6)]
-        if 'pos_probs' in outputs:
-            res_arr.extend([round(conf.detach().item(), 6) for conf in outputs['pos_probs'][idx]])
-        pred_result.append(res_arr)
+    for bidx in range(len(outputs['images'])):
+        pcoords = valid_input[bidx]['coords']
+        pred_cls = torch.max(outputs['token_classes'][bidx], dim=-1)[0]
+        pred_clsid = (pred_cls > 0).int().item()
+
+        patch_predinfo = {
+            'pred_label': pred_clsid,
+            'pos_bboxes': []
+        }
+        if pred_clsid == 1:
+            patch_predinfo['pos_bboxes'] = format_bboxes(outputs, bidx, downsample_ratio, pcoords)
+        pred_result.append(patch_predinfo)
+        
         if args.visual_pred and str(pred_clsid) in args.visual_pred:
+            o_img = valid_input[bidx]['image']
             timestamp = time.time()
             os.makedirs(f'{save_prefix}/{pred_clsid}', exist_ok=True)
             o_img.save(f'{save_prefix}/{pred_clsid}/{timestamp}.png')
-    
-    attn_array = None
-    if 'attn_array' in outputs:
-        attn_array = outputs['attn_array'].detach().cpu()   # (bs, layer, num_cls, num_tokens)
-    return pred_result,attn_array
+    return pred_result
 
 def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, patientId):   
-    save_root_dir = f'predict_results/{patientId}'
+    save_root_dir = f'{args.pred_save_dir}/{patientId}'
     save_prefix = f'{save_root_dir}/valid_tag/{patientId}_c{proc_id}'
 
     if args.visual_pred is not None:
@@ -119,9 +185,8 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
         coords = np.array([x, y, x+PATCH_EDGE, y+PATCH_EDGE])*downsample_ratio
         read_result_pool.append({
             'image': read_result,
-            'coords': coords.tolist(),   # patch 坐标 (在 LEVEL=0上的坐标)
-            'attn_array': [], # 该patch块的阴阳热力值（仅valid patch有此值）
-            'pn_pred': [],  # 该patch块的阳性预测概率（仅valid patch有此值）
+            'coords': coords.tolist(),   # patch 坐标 (在 LEVEL=0 上的坐标)
+            'pn_pred': [],  # 该patch块的阳性bbox预测项（仅valid patch有此值）
         })
         
         if len(read_result_pool) % args.test_bs == 0 or p_idx == len(start_points)-1:
@@ -132,13 +197,8 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
             print(f'\rCore: {proc_id}, 当前已处理: {sum(curent_id)}', end='')
         
         if len(valid_read_result) > 0 and not args.only_valid:
-            imgs = [item['image'] for item in valid_read_result]
-            pred_result,attn_array = inference_batch_pn(pn_model, imgs, save_prefix)
+            pred_result = inference_batch_pn(pn_model, valid_read_result, save_prefix, downsample_ratio)
             for pidx, pitem in enumerate(valid_read_result):
-                # 只保存第二次注意力计算后的注意力值
-                if attn_array is not None:
-                    # attn_array.shape: (bs, layer, num_classes, num_tokens)
-                    pitem['attn_array'] = attn_array[pidx][1].tolist()
                 pitem['pn_pred'] = pred_result[pidx]
                 del pitem['image']
             total_pred_results.extend(valid_read_result)
@@ -149,7 +209,7 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
 
 def get_pn_model(device):
     cfg = Config.fromfile(args.config_file)
-    cfg.backbone_ckpt = None
+    cfg.backbone_cfg['backbone_ckpt'] = None
     model = PatchClsNet(cfg).to(device)
     model.load_ckpt(args.ckpt)
     model.eval()
@@ -218,34 +278,23 @@ def multiprocess_inference():
         if args.only_valid:
             logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}, total: {len(slide_start_points)}')
         else:
-            confi_pred = np.array([res['pn_pred'] for res in pn_result])
-            if len(confi_pred) == 0: # 无任何 valid image
-                pn_result_patch_clsid = []
-                pred_confi = []
-            else:
-                pn_result_patch_clsid = confi_pred[:,0]
-                pred_confi = [f'{" ".join(map(str, conf.tolist()))} \n' for conf in confi_pred[:, 1:]]
+            patch_pred = [res['pn_pred'] for res in pn_result]
+            pn_result_patch_clsid = [predinfo['pred_label'] for predinfo in patch_pred]
 
             # 打印每张 slide 阴阳 patch 预测结果
-            p_path_num = int(np.sum(pn_result_patch_clsid))
+            p_path_num = int(sum(pn_result_patch_clsid))
             n_patch_num = len(pn_result_patch_clsid) - p_path_num
             p_ratio = p_path_num / (p_path_num + n_patch_num + 1e-6)    # 防止除0
             pred_clsid = int(p_ratio > positive_ratio_thr)
             logger.info(f'\n[{row.Index+1}/{len(all_kfb_info)}] Time of {row.patientId}: {t_delta:0.2f}s, invalid: {np.sum(curent_id[:,0])}, uncertain: {np.sum(curent_id[:,2])}, valid: {np.sum(curent_id[:,1])}(positive:{p_path_num} negative:{n_patch_num} p_ratio:{p_ratio:0.4f} pred/gt:{pred_clsid}/{row.kfb_clsid}-{row.kfb_clsname})')
 
-            # 保存每张patch在每个类别上的预测置信度
-            posi_confi_save_dir = f'{args.record_save_dir}/posi_conf'
-            os.makedirs(posi_confi_save_dir, exist_ok=True)
-            with open(f'{posi_confi_save_dir}/{row.patientId}.txt', 'w') as f:
-                f.writelines(pred_confi)
-
-            # 保存每张patch在每个类别上的响应值（热力图）
-            heat_save_dir = f'{args.record_save_dir}/heat_value'
-            os.makedirs(heat_save_dir, exist_ok=True)
-            with open(f'{heat_save_dir}/{row.patientId}.json', 'w') as f:
+            # 保存每张patch预测的所有阳性bbox信息
+            pred_pos_items_save_dir = f'{args.record_save_dir}/pred_pos_items'
+            os.makedirs(pred_pos_items_save_dir, exist_ok=True)
+            with open(f'{pred_pos_items_save_dir}/{row.patientId}.json', 'w') as f:
                 json.dump(pn_result, f)
 
-        if np.sum(curent_id[:,1]) <= 1000 or np.sum(curent_id[:,0]) > np.sum(curent_id[:,1])*2:
+        if np.sum(curent_id[:,1]) <= 200 or np.sum(curent_id[:,0]) > np.sum(curent_id[:,1])*2:
             low_valid_kfb_info.append([row.kfb_path, row.kfb_clsid, row.kfb_clsname, row.patientId, row.kfb_source])
 
     df_low_valid = pd.DataFrame(low_valid_kfb_info, columns=['kfb_path', 'kfb_clsid', 'kfb_clsname', 'patientId', 'kfb_source'])
@@ -259,6 +308,7 @@ parser.add_argument('ckpt', type=str)
 parser.add_argument('--record_save_dir', type=str)
 parser.add_argument('--only_valid', action='store_true')
 parser.add_argument('--visual_pred', type=str, nargs='*', choices=['0', '1', 'invalid', 'valid', 'uncertain'])
+parser.add_argument('--pred_save_dir', type=str)
 parser.add_argument('--cpu_num', type=int, default=1, help='multiprocess cpu num')
 parser.add_argument('--test_bs', type=int, default=16, help='batch size of model test')
 parser.add_argument('--seed', type=int, default=1234, help='random seed')
@@ -268,7 +318,6 @@ args = parser.parse_args()
 if __name__ == '__main__':
     set_seed(args.seed)
     multiprocessing.set_start_method('spawn', force=True)
-    
     multiprocess_inference()
 
 '''
@@ -276,14 +325,26 @@ Time of process kfb elapsed: 805.35 seconds, valid: 6126, invalid: 1108, uncerta
 Time of process kfb elapsed: 71.05 seconds, valid: 6126, invalid: 1108,  uncertain: 72, total: 7306
 
 CUDA_VISIBLE_DEVICES=0 python test_wsi_online.py \
-    data_resource/debug2.csv \
-    checkpoints/vlaid_cls_best.pth \
-    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/config.py \
-    log/l_cerscan_v2/wscernet/2025_03_25_11_08_39/checkpoints/best.pth \
-    --record_save_dir log/debug_ours \
+    data_resource/debugv2.csv \
+    checkpoints/valid_cls_best.pth \
+    log/l_cerscan_v3/wscer_partial/config.py \
+    log/l_cerscan_v3/wscer_partial/checkpoints/best.pth \
+    --record_save_dir log/wscer_partial \
     --cpu_num 8 \
-    --test_bs 128 \
+    --test_bs 16 \
     --visual_pred 1
     --only_valid \
     --visual_pred invalid valid 1
+
+CUDA_VISIBLE_DEVICES=2 python test_wsi_online.py \
+    data_resource/0416/annofiles/val.csv \
+    checkpoints/valid_cls_best.pth \
+    log/l_cerscan_v3/wscer_partial/config.py \
+    log/l_cerscan_v3/wscer_partial/checkpoints/best.pth \
+    --record_save_dir log/patientImgs_val \
+    --cpu_num 8 \
+    --test_bs 16 \
+    --visual_pred valid \
+    --pred_save_dir data_resource/0416/patientImgs/val \
+    --only_valid
 '''

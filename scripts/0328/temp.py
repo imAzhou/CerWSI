@@ -12,7 +12,7 @@ for mode in ['val']:
         if '0403jfsw' in patchinfo['prefix'] and patchinfo['diagnose'] == 1:
             purename = patchinfo['filename'].split('.')[0]
             src_path = f'data_resource/0403/images/Pos/{purename}.png'
-            target_path = f'Pos_temp/{purename}.png'
+            target_path = f'data_resource/0410/0403jfsw/images/Pos/{purename}.png'
             try:
                 shutil.copy(src_path, target_path)
                 cnt += 1

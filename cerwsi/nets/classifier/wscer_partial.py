@@ -322,8 +322,9 @@ class WSCerPartial(MetaClassifier):
         attn_map, attn_array = self.calc_logits(feature_emb) # (bs, num_classes)
         attn_map = F.softmax(attn_map, dim=-1)  # (bs, num_tokens, n_cls)
         # max_probs 的 shape 是 (bs, num_tokens)，即每个位置的预测概率
-        # predicted_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引：0:阴性/未知,其他都是阳性
-        max_probs, predicted_classes = torch.max(attn_map, dim=-1)
+        # predict_classes 的 shape 是 (bs, num_tokens)，即每个位置的预测类别索引：0:阴性/未知,其他都是阳性
+        max_probs, predict_classes = torch.max(attn_map, dim=-1)
         databatch['token_probs'] = max_probs   # (bs, num_tokens)
-        databatch['token_classes'] = predicted_classes # (bs, num_tokens)
+        databatch['token_classes'] = predict_classes # (bs, num_tokens)
         return databatch
+    

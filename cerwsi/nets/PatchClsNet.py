@@ -29,9 +29,9 @@ class PatchClsNet(nn.Module):
         params_weight = torch.load(ckpt, map_location=self.device)
         print(self.load_state_dict(params_weight, strict=True))
     
-    def forward(self, data_batch, mode, optim_wrapper=None):        
+    def forward(self, data_batch, mode, optim_wrapper=None, epoch=None):        
         if mode == 'train':
-            return self.train_step(data_batch, optim_wrapper)
+            return self.train_step(data_batch, optim_wrapper, epoch)
         if mode == 'val':
             return self.val_step(data_batch)
     
@@ -49,11 +49,11 @@ class PatchClsNet(nn.Module):
             feature_emb = self.backbone(input_x)
         return feature_emb
 
-    def train_step(self, databatch, optim_wrapper: OptimWrapper):
+    def train_step(self, databatch, optim_wrapper: OptimWrapper, epoch: int):
         input_x = databatch['images']   # (bs, c, h, w)
         feature_emb = self.extract_feature(input_x)
         feature_emb = self.neck(feature_emb)
-        loss,loss_dict = self.classifier.calc_loss(feature_emb, databatch)
+        loss,loss_dict = self.classifier.calc_loss(feature_emb, databatch, epoch)
         optim_wrapper.update_params(loss)
         return loss,loss_dict
 

@@ -3,9 +3,9 @@ from torch import Tensor, nn
 import math
 import torch.nn.functional as F
 from typing import List, Tuple, Type
-from .feat_pe import get_feat_pe
-from .meta_classifier import MetaClassifier
-from ..backbone.SAM.common import LayerNorm2d,MLP
+from ..feat_pe import get_feat_pe
+from ..meta_classifier import MetaClassifier
+from cerwsi.nets.backbone.SAM.common import LayerNorm2d,MLP
 from cerwsi.utils import build_evaluator,TokenMetric
 
 class MLPBlock(nn.Module):

@@ -1,6 +1,6 @@
 
 # strategy
-lr = 0.001
+lr = 0.0005
 min_lr = 0.00001
 weight_decay = 0.001
 max_epochs = 100
@@ -14,4 +14,5 @@ optim_wrapper = dict(
 
 positive_thr = 0.5
 img_size = 512  # 224, 448, 512, 1024
-gt_mask_size = (64,64)
+
+logger_name = 'wscer_partial'

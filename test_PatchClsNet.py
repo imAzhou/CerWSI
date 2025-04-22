@@ -2,7 +2,6 @@ import torch
 import os
 from tqdm import tqdm
 import torch.distributed as dist
-from mmengine.dist import collect_results
 import argparse
 from mmengine.config import Config
 from cerwsi.datasets import load_data
@@ -10,16 +9,12 @@ from cerwsi.nets import PatchClsNet
 from cerwsi.utils import set_seed, init_distributed_mode, is_main_process
 import json
 from PIL import Image
-import matplotlib.pyplot as plt
-import numpy as np
 
 from prettytable import PrettyTable
 from cerwsi.utils import calculate_metrics,print_confusion_matrix,draw_OD
 
 POSITIVE_THR = 0.5
-POSITIVE_CLASS = ['ASC-US','LSIL', 'ASC-H', 'HSIL', 'AGC']
-colors = plt.cm.tab10(np.linspace(0, 1, len(POSITIVE_CLASS)))[:, :3] * 255
-category_colors = {cat: tuple(map(int, color)) for cat, color in zip(POSITIVE_CLASS, colors)}
+POSITIVE_CLASS = ['AGC', 'ASC-US','LSIL', 'ASC-H', 'HSIL']
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 parser = argparse.ArgumentParser()
@@ -49,7 +44,7 @@ def draw_pred(img_item):
         inside_items.append(
             dict(sub_class=clsname, region=dict(x=x1,y=y1,width=scale_ratio,height=scale_ratio))
         )
-    draw_OD(img, f'{args.save_dir}/FN/{filename}', square_coords, inside_items, category_colors)
+    draw_OD(img, f'{args.save_dir}/FN/{filename}', square_coords, inside_items, POSITIVE_CLASS)
 
 
 def test_net(cfg, model, model_without_ddp):
@@ -60,52 +55,19 @@ def test_net(cfg, model, model_without_ddp):
     if is_main_process():
         pbar = tqdm(valloader, ncols=80)
     
-    predict_rsults = []
     for idx, data_batch in enumerate(pbar):
+        # if idx > 2:
+        #     break
         with torch.no_grad():
             outputs = model(data_batch, 'val')
         model_without_ddp.classifier.evaluator.process(data_samples=[outputs], data_batch=None)
-        
-        for bidx in range(len(outputs['images'])):
-            if 'img_probs' in outputs:
-                pred_label = (outputs['img_probs'][bidx] > POSITIVE_THR).int().item()
-                pred_score = outputs['img_probs'][bidx].item()
-            if 'pos_probs' in outputs:
-                pos_pred = (outputs['pos_probs'][bidx] > POSITIVE_THR).int().cpu().tolist()
-                if pred_label == 0:
-                    pred_multi_label = [0]
-                else:
-                    pred_multi_label = [clsidx+1 for clsidx,pred in enumerate(pos_pred) if pred == 1]
-            if 'token_classes' in outputs:
-                pred_cls = torch.max(outputs['token_classes'][0], dim=-1)[0]
-                pred_label = (pred_cls > 0).int().item()
-                pred_multi_label = []
-                pred_score = 0.0
-
-            gt_multi_label = torch.nonzero(outputs['multi_pos_labels'][bidx], as_tuple=True)[0]
-            gt_multi_label = [i.item()+1 for i in gt_multi_label]
-            if len(gt_multi_label) == 0:
-                gt_multi_label = [0]
-            result = dict(
-                img_path = outputs['image_paths'][bidx],
-                gt_label = outputs['image_labels'][bidx].item(),
-                pred_label = pred_label,
-                pred_score = pred_score,
-                pos_gt = gt_multi_label,
-                pos_pred = pred_multi_label
-            )
-            predict_rsults.append(result)
     
     metrics = model_without_ddp.classifier.evaluator.evaluate(len(valloader.dataset))
-    results = collect_results(predict_rsults, len(valloader.dataset))
     if is_main_process():
         pbar.close()
         print(metrics)
-        pred_results_dict = {'results':results}
-        json_path = f'{args.save_dir}/pred_results_{POSITIVE_THR}.json'
-        with open(json_path, 'w') as f:
-            json.dump(pred_results_dict, f)
-        # analyze(json_path)
+
+
 
 def analyze(json_path):
     with open(json_path, 'r') as f:
@@ -148,6 +110,7 @@ def main():
     device = torch.device(f'cuda:{os.getenv("LOCAL_RANK")}')
 
     cfg = Config.fromfile(args.config_file)
+    cfg.save_result_dir = args.save_dir
     
     model = PatchClsNet(cfg).to(device)
     model_without_ddp = model
@@ -167,8 +130,8 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12341 test_PatchClsNet.py \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/config.py \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44/checkpoints/best.pth \
-    log/l_cerscan_v2/wscer_partial/2025_03_30_13_15_44
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_PatchClsNet.py \
+    log/l_cerscanv4/wscer_partial/2025_04_21_00_22_04/config.py \
+    log/l_cerscanv4/wscer_partial/2025_04_21_00_22_04/checkpoints/epoch_19.pth \
+    log/l_cerscanv4/wscer_partial/2025_04_21_00_22_04
 '''

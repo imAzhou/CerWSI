@@ -7,13 +7,13 @@ import torch.nn.functional as F
 
 # 自定义数据集类
 class ClsDataset(Dataset):
-    def __init__(self, root_dir, annojson_path, transform, classes, gt_mask_size):
+    def __init__(self, root_dir, annojson_path, transform, classes):
         """
         Args:
             img_dir (str): img dir
         """
-        # self.img_dir = f'{root_dir}/images'
-        # self.mask_dir = f'{root_dir}/mask'
+        self.img_dir = f'{root_dir}/images'
+        self.mask_dir = f'{root_dir}/mask'
         self.root_dir = root_dir
         self.annofiles_dir = f'{root_dir}/annofiles'
         with open(f'{self.annofiles_dir}/{annojson_path}', 'r') as f:
@@ -23,15 +23,15 @@ class ClsDataset(Dataset):
         self.transform = transform
         self.num_classes = len(classes)
         self.classes = classes
-        self.gt_mask_size = gt_mask_size
 
     def __len__(self):
         return len(self.patch_infolist)
 
     def __getitem__(self, idx):
         imginfo = self.patch_infolist[idx]
+        imginfo['clsids'] = [self.classes.index(clsname) for clsname in imginfo['clsnames']]
         
-        imgpath = f'{self.root_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
+        imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
         imginfo['imgpath'] = imgpath
         image = Image.open(imgpath)
 
@@ -50,23 +50,17 @@ class ClsDataset(Dataset):
             gt_mask = torch.ones((h,w), dtype=torch.int32)
         else:
             purename = imginfo["filename"].split('.')[0]
-            tag_dir = imginfo["prefix"].split('/')[0]
-            data = np.load(f'{self.root_dir}/{tag_dir}/masks/{purename}.npz')
+            data = np.load(f'{self.mask_dir}/{purename}.npz')
             nonzero_indices = data['indices']
             nonzero_values = data['values']  # 1代表阴性，>1 代表阳性
             shape = tuple(data['shape'])
             restored_gt_mask = np.zeros((h,w), dtype=int)
             restored_gt_mask[nonzero_indices[0], nonzero_indices[1]] = nonzero_values
-            gt_mask = torch.as_tensor(restored_gt_mask)
+            gt_mask = torch.as_tensor(restored_gt_mask).to(torch.int32)
             pos_label_list = [i-2 for i in list(set(nonzero_values))]   # [0,4]
             multi_pos_label[pos_label_list] = 1
 
-        gt_mask = gt_mask.unsqueeze(0).unsqueeze(0).float()  # shape: (1, 1, H, W)
-        # 使用最近邻插值 resize 到 (32, 32)
-        resized_mask = F.interpolate(gt_mask, size=self.gt_mask_size, mode='nearest')
-        resized_mask = resized_mask.squeeze(0).squeeze(0).to(torch.int32)
-
-        return resized_mask,multi_pos_label
+        return gt_mask,multi_pos_label
 
     def generate_bbox_mask(self, bboxes, bboxes_clsid, shape):
         """

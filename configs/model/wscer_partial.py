@@ -8,7 +8,7 @@ backbone_cfg = _base_.backbone_cfgdict[backbone_type]
 
 # neck
 neck_type = 'conv'
-neck_output_dim = [512]
+neck_output_dim = [1024]
 
 # classifier
 classifier_type = 'wscer_partial'

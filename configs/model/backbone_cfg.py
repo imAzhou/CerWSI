@@ -26,7 +26,7 @@ SAMCONFIG = dict(
     backbone_size_type = 'vit_b',
     frozen_backbone = True,
     use_peft = 'lora', 
-    use_dtcwt_indexes = [0,1],
+    use_dtcwt_indexes = [],
     vit_patch_size = 16
 )
 

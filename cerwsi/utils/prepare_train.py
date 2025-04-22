@@ -10,7 +10,7 @@ from mmengine.evaluator import Evaluator
 from mmengine.registry import EVALUATOR
 
 
-def get_logger(record_save_dir, model, print_cfg: Config, logger_name):
+def get_logger(record_save_dir, model, print_cfg: Config):
     # set record files
     save_dir_date = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
     files_save_dir = f'{record_save_dir}/{save_dir_date}'
@@ -21,7 +21,7 @@ def get_logger(record_save_dir, model, print_cfg: Config, logger_name):
     config_file = os.path.join(files_save_dir, 'config.py')
     print_cfg.dump(config_file)
     # save log file
-    logger = MMLogger.get_instance(logger_name, log_file=f'{files_save_dir}/result.log')
+    logger = MMLogger.get_instance(print_cfg.logger_name, log_file=f'{files_save_dir}/result.log')
     parameter_cnt = get_parameter_number(model)
     logger.info(f'total params: {parameter_cnt}')
     logger.info(f'update params:')

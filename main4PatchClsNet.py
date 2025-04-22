@@ -31,7 +31,7 @@ def train_net(cfg, model, model_without_ddp):
     optimizer,lr_scheduler = get_train_strategy(model_without_ddp, cfg)
     
     if is_main_process():
-        logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg, 'multi_token')
+        logger, files_save_dir = get_logger(args.record_save_dir, model_without_ddp, cfg)
     max_acc = -1
     for epoch in range(cfg.max_epochs):
         if args.distributed:
@@ -46,7 +46,7 @@ def train_net(cfg, model, model_without_ddp):
         for idx, data_batch in enumerate(pbar):
             # if idx > 10:
             #     break
-            loss,loss_dict = model(data_batch, 'train', optim_wrapper=optimizer)
+            loss,loss_dict = model(data_batch, 'train', optim_wrapper=optimizer, epoch=epoch)
             loss = reduce_loss(loss)
             if is_main_process():
                 pbar.desc = f"average loss: {round(loss.item(), 4)}"
@@ -85,7 +85,6 @@ def train_net(cfg, model, model_without_ddp):
             metrics = model_without_ddp.classifier.evaluator.evaluate(len(valloader.dataset))
             if is_main_process():
                 pbar.close()
-                logger.info(metrics)
                 if cfg.save_each_epoch:
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
                 
@@ -132,13 +131,13 @@ if __name__ == '__main__':
 
 '''
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12340 main4PatchClsNet.py \
-    configs/dataset/l_cerscanv3_dataset.py \
+    configs/dataset/l_cerscanv4_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscanv3/wscer_partial
+    --record_save_dir log/l_cerscanv4/wscer_partial
 
-CUDA_VISIBLE_DEVICES=0,1 torchrun  --nproc_per_node=2 --master_port=12340 main4PatchClsNet.py \
-    configs/dataset/l_cerscanv3_dataset.py \
+CUDA_VISIBLE_DEVICES=0,1,6,7 torchrun  --nproc_per_node=4 --master_port=12340 main4PatchClsNet.py \
+    configs/dataset/l_cerscanv4_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
     --record_save_dir log/debug

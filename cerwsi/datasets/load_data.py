@@ -35,7 +35,7 @@ def load_data(cfg):
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
-    train_dataset = ClsDataset(cfg.data_root, cfg.train_annojson, train_transform, cfg.classes, cfg.gt_mask_size)
+    train_dataset = ClsDataset(cfg.data_root, cfg.train_annojson, train_transform, cfg.classes)
     train_sampler = DistributedSampler(train_dataset)
     train_loader = DataLoader(train_dataset, 
                             pin_memory=True,
@@ -49,7 +49,7 @@ def load_data(cfg):
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
-    val_dataset = ClsDataset(cfg.data_root, cfg.val_annojson, val_transform, cfg.classes, cfg.gt_mask_size)
+    val_dataset = ClsDataset(cfg.data_root, cfg.val_annojson, val_transform, cfg.classes)
     val_sampler = DistributedSampler(val_dataset)
     val_loader = DataLoader(val_dataset, 
                             pin_memory=True,

@@ -87,6 +87,7 @@ class SAMEncoder(MetaBackbone):
 
         if frozen_backbone:
             update_keys = ['lora', 'dtxwts']
+            # update_keys = ['dtxwts']
             self.freeze_backbone(update_keys)
 
     def load_backbone(self, ckpt):

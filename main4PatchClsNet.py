@@ -44,9 +44,9 @@ def train_net(cfg, model, model_without_ddp):
             pbar = tqdm(trainloader, ncols=80)
         
         for idx, data_batch in enumerate(pbar):
-            # if idx > 10:
+            # if idx > 4:
             #     break
-            loss,loss_dict = model(data_batch, 'train', optim_wrapper=optimizer, epoch=epoch)
+            loss,loss_dict = model(data_batch, 'train', optim_wrapper=optimizer)
             loss = reduce_loss(loss)
             if is_main_process():
                 pbar.desc = f"average loss: {round(loss.item(), 4)}"
@@ -103,6 +103,7 @@ def train_net(cfg, model, model_without_ddp):
 def main():
     init_distributed_mode(args)
     set_seed(args.seed)
+    
     device = torch.device(f'cuda:{os.getenv("LOCAL_RANK")}')
 
     d_cfg = Config.fromfile(args.dataset_config_file)
@@ -120,7 +121,8 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    
+    if cfg.load_from is not None:
+        model_without_ddp.load_ckpt(cfg.load_from)
     train_net(cfg, model, model_without_ddp)
 
     if args.distributed:
@@ -134,10 +136,10 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=
     configs/dataset/l_cerscanv4_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscanv4/wscer_partial
+    --record_save_dir log/l_cerscanv1/wscer_partial
 
-CUDA_VISIBLE_DEVICES=0,1,6,7 torchrun  --nproc_per_node=4 --master_port=12340 main4PatchClsNet.py \
-    configs/dataset/l_cerscanv4_dataset.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12340 main4PatchClsNet.py \
+    configs/dataset/l_cerscanv1_dataset.py \
     configs/model/wscer_partial.py \
     configs/strategy.py \
     --record_save_dir log/debug

@@ -14,6 +14,7 @@ class ClsDataset(Dataset):
         """
         self.img_dir = f'{root_dir}/images'
         self.mask_dir = f'{root_dir}/mask'
+        self.instance_mask_dir = f'{root_dir}/instance_mask'
         self.root_dir = root_dir
         self.annofiles_dir = f'{root_dir}/annofiles'
         with open(f'{self.annofiles_dir}/{annojson_path}', 'r') as f:
@@ -34,13 +35,26 @@ class ClsDataset(Dataset):
         imgpath = f'{self.img_dir}/{imginfo["prefix"]}/{imginfo["filename"]}'
         imginfo['imgpath'] = imgpath
         image = Image.open(imgpath)
-
+        imginfo['origin_size'] = image.size
         input_tensor = self.transform(image)
         image_label = imginfo['diagnose']
-        clsid_mask,multi_pos_label = self.generate_clsid_mask(imginfo, image.size)
-        
-        return input_tensor,image_label,clsid_mask,multi_pos_label,imginfo
+
+        # clsid_mask,multi_pos_label = self.generate_clsid_mask(imginfo, image.size)
+        # return input_tensor,image_label,clsid_mask,multi_pos_label,imginfo
+
+        instance_mask, instance_label = self.generate_instance_GT(imginfo)
+        return input_tensor,image_label,instance_mask, instance_label, imginfo
     
+    def generate_instance_GT(self, imginfo):
+        image_label = imginfo['diagnose']
+        instance_mask, instance_label = [],[]
+        if image_label != 0:
+            purename = imginfo["filename"].split('.')[0]
+            data = np.load(f'{self.instance_mask_dir}/{purename}.npz')
+            instance_mask = data['masks']      # (n, h, w)
+            instance_label = data['labels']    # (n,)
+        return instance_mask, instance_label
+
     def generate_clsid_mask(self, imginfo, shape):
         w, h = shape
         image_label = imginfo['diagnose']

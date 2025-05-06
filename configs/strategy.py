@@ -1,9 +1,9 @@
 
 # strategy
-lr = 0.0005
-min_lr = 0.00001
+lr = 0.001
+min_lr = 0.0001
 weight_decay = 0.001
-max_epochs = 100
+max_epochs = 50
 warmup_epoch = 5
 gamma = 0.95
 save_each_epoch = True
@@ -16,3 +16,5 @@ positive_thr = 0.5
 img_size = 512  # 224, 448, 512, 1024
 
 logger_name = 'wscer_partial'
+apply_auxiliary = 'random'  # random, logit
+load_from = None

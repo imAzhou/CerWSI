@@ -105,3 +105,8 @@ def cut_random_neg():
 if __name__ == '__main__':
     cut_random_neg()
 
+'''
+train: 57471
+val: 14857
+total: 72328
+'''

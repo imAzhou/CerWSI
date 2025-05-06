@@ -11,7 +11,9 @@ class PatchClsNet(nn.Module):
         super(PatchClsNet, self).__init__()
 
         self.backbone = get_backbone(cfg)
-        self.neck = get_neck(cfg)
+        self.neck_type = cfg.neck_type
+        if self.neck_type is not None:
+            self.neck = get_neck(cfg)
         self.classifier = get_classifier(cfg)
 
         frozen_backbone = cfg.backbone_cfg['frozen_backbone']
@@ -20,6 +22,7 @@ class PatchClsNet(nn.Module):
 
         self.split_group = cfg.split_group
         self.img_size = cfg.img_size
+
         
     @property
     def device(self):
@@ -29,14 +32,13 @@ class PatchClsNet(nn.Module):
         params_weight = torch.load(ckpt, map_location=self.device)
         print(self.load_state_dict(params_weight, strict=True))
     
-    def forward(self, data_batch, mode, optim_wrapper=None, epoch=None):        
+    def forward(self, data_batch, mode, optim_wrapper=None):        
         if mode == 'train':
-            return self.train_step(data_batch, optim_wrapper, epoch)
+            return self.train_step(data_batch, optim_wrapper)
         if mode == 'val':
             return self.val_step(data_batch)
     
     def extract_feature(self, input_x):
-        
         if self.backbone_nograd:
             self.backbone.eval()
             with torch.no_grad():
@@ -49,17 +51,21 @@ class PatchClsNet(nn.Module):
             feature_emb = self.backbone(input_x)
         return feature_emb
 
-    def train_step(self, databatch, optim_wrapper: OptimWrapper, epoch: int):
+    def train_step(self, databatch, optim_wrapper: OptimWrapper):
         input_x = databatch['images']   # (bs, c, h, w)
-        feature_emb = self.extract_feature(input_x)
-        feature_emb = self.neck(feature_emb)
-        loss,loss_dict = self.classifier.calc_loss(feature_emb, databatch, epoch)
+        # feature_emb = self.extract_feature(input_x)
+        feature_emb = self.backbone(input_x)
+        if self.neck_type is not None:
+            feature_emb = self.neck(feature_emb)
+        loss,loss_dict = self.classifier.calc_loss(feature_emb, databatch)
         optim_wrapper.update_params(loss)
         return loss,loss_dict
 
     def val_step(self, databatch):
         input_x = databatch['images']
-        feature_emb = self.extract_feature(input_x)
-        feature_emb = self.neck(feature_emb)
+        # feature_emb = self.extract_feature(input_x)
+        feature_emb = self.backbone(input_x)
+        if self.neck_type is not None:
+            feature_emb = self.neck(feature_emb)
         databatch = self.classifier.set_pred(feature_emb, databatch)
         return databatch

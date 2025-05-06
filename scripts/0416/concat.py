@@ -21,12 +21,12 @@ def load_partial_list(roi_patientIds):
         val_data = json.load(f)
     train_patchlist,val_patchlist = [],[]
     for kfbinfo in train_data:
-        # if kfbinfo['patientId'] in roi_patientIds:
-        #     continue
+        if kfbinfo['patientId'] in roi_patientIds:
+            continue
         train_patchlist.extend(kfbinfo['patch_list'])
     for kfbinfo in val_data:
-        # if kfbinfo['patientId'] in roi_patientIds:
-        #     continue
+        if kfbinfo['patientId'] in roi_patientIds:
+            continue
         val_patchlist.extend(kfbinfo['patch_list'])
     
     return train_patchlist,val_patchlist
@@ -95,9 +95,9 @@ def main():
     analyze_patchlist(train_data)
     analyze_patchlist(val_data)
 
-    with open(f'{root_dir}/train.json', 'w', encoding='utf-8') as f:
+    with open(f'{root_dir}/train_pure.json', 'w', encoding='utf-8') as f:
         json.dump(train_data, f, ensure_ascii=False, indent=4)
-    with open(f'{root_dir}/val.json', 'w', encoding='utf-8') as f:
+    with open(f'{root_dir}/val_pure.json', 'w', encoding='utf-8') as f:
         json.dump(val_data, f, ensure_ascii=False, indent=4)
 
 if __name__ == "__main__":
@@ -106,11 +106,17 @@ if __name__ == "__main__":
 
 '''
 Neg,Pos
-train: [70131, 75382]
-val: [17208, 19936]
+train: [70131, 75465]
+val: [17208, 19962]
 
 pure
 Neg,Pos
-train: [70131, 39606]
-val: [17208, 11159]
+train: [70131, 39677]
+val: [17208, 11179]
+
+roi_cut:
+train Neg,Pos: [8836, 6912]
+val Neg,Pos: [2351, 1818]
+slide_cut:
+train Neg,Pos: [3824, 1662]
 '''

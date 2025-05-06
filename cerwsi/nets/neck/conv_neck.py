@@ -42,6 +42,9 @@ class ConvNeck(nn.Module):
             LayerNorm2d(out_chans),
         )
 
+        # for p in self.conv_module.parameters():
+        #     p.requires_grad = False
+
         
     def forward(self, feature_emb: torch.Tensor):
         '''

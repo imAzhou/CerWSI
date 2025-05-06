@@ -116,6 +116,8 @@ def process_pos_slide(rowInfo):
     keep_patches = []
     for patchid,patchInfo in pos_patches_result.items():
         unique_clsnames = list(set(patchInfo['clsnames']))
+        if patchInfo['filename'] == 'JFSW_1_94_361.png':
+            print()
         for clsname in unique_clsnames:
             if clsname in POSITIVE_CLASS:
                 keep_patches.append(patchInfo)

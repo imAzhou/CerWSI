@@ -1,5 +1,5 @@
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
+# from sam2.build_sam import build_sam2
+# from sam2.sam2_image_predictor import SAM2ImagePredictor
 import json
 import numpy as np
 from tqdm import tqdm
@@ -53,30 +53,32 @@ def vis_sample(image,masks,input_boxes,filename):
     plt.close()
 
 def make_token_mask():
-    path_prefix = '/c22073/zly/datasets/CervicalDatasets/LCerScanv4/images'
-    os.makedirs('statistic_results/0416/sam2_output_mask', exist_ok=True)
-    mask_save_dir = '/c22073/zly/datasets/CervicalDatasets/LCerScanv4/mask'
-    os.makedirs(mask_save_dir, exist_ok=True)
+    # path_prefix = '/c22073/zly/datasets/CervicalDatasets/LCerScanv4/images'
+    # os.makedirs('statistic_results/0416/sam2_output_mask', exist_ok=True)
+    # mask_save_dir = '/c22073/zly/datasets/CervicalDatasets/LCerScanv4/mask'
+    # os.makedirs(mask_save_dir, exist_ok=True)
 
     sam2_checkpoint = "/c22073/zly/codes/sam2/checkpoints/sam2.1_hiera_large.pt"
     model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
-    device = torch.device("cuda:7")
-    torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
-    if torch.cuda.get_device_properties(0).major >= 8:
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-    sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
-    predictor = SAM2ImagePredictor(sam2_model)
+    # device = torch.device("cuda:7")
+    # torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
+    # if torch.cuda.get_device_properties(0).major >= 8:
+    #     torch.backends.cuda.matmul.allow_tf32 = True
+    #     torch.backends.cudnn.allow_tf32 = True
+    # sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
+    # predictor = SAM2ImagePredictor(sam2_model)
 
     for mode in ['train', 'val']:
-        with open(f'/c22073/zly/datasets/CervicalDatasets/LCerScanv4/annofiles/{mode}.json', 'r') as f:
-            patch_list = json.load(f)
+        with open(f'data_resource/0416/annofiles/{mode}_partial_pos.json', 'r') as f:
+            patch_list = (json.load(f))['']
         
         for patchinfo in tqdm(patch_list, ncols=80):
             # if random.random() > 0.01:
             #     continue
             if patchinfo['diagnose'] == 0:
                 continue
+            if patchinfo["filename"] == 'JFSW_1_94_361.png':
+                print()
             imgpath = f'{path_prefix}/{patchinfo["prefix"]}/{patchinfo["filename"]}'
             image = Image.open(imgpath)
             image = np.array(image.convert("RGB"))

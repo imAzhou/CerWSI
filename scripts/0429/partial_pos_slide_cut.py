@@ -1,3 +1,4 @@
+import multiprocessing
 from tqdm import tqdm
 import argparse
 import numpy as np
@@ -9,12 +10,16 @@ import json
 from multiprocessing import Pool
 from PIL import Image
 import matplotlib.pyplot as plt
+import cv2
+import torch
+from mmpretrain.structures import DataSample
 from cerwsi.utils import (KFBSlide,remap_points,read_json_anno,decode_xml,is_bbox_inside,calc_relative_coord,draw_OD)
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
-LEVEL = 1
+CERTAIN_THR = 0.7
+LEVEL = 0
 PATCH_EDGE = 512
 STRIDE = 450
 NEGATIVE_CLASS = ['NILM', 'GEC']
@@ -118,8 +123,6 @@ def process_pos_slide(rowInfo):
     keep_patches = []
     for patchInfo in pos_patch_list:
         unique_clsnames = list(set(patchInfo['clsnames']))
-        if patchInfo['filename'] == 'JFSW_1_94_361.png':
-            print()
         for clsname in unique_clsnames:
             if clsname in POSITIVE_CLASS:
                 keep_patches.append(patchInfo)
@@ -204,7 +207,6 @@ def gene_patch_json():
     train_data_df = pd.read_csv(args.train_csv_file)
     val_data_df = pd.read_csv(args.val_csv_file)
 
-    filter_patientIds = filter_roi_slide()
     for data_df,mode in zip([train_data_df,val_data_df], ['train','val']):
         all_patch_list = []
         total_pos_nums = 0
@@ -213,8 +215,6 @@ def gene_patch_json():
             #     break
             if row.kfb_clsname == 'NILM' or row.kfb_source == 'ZY_ONLINE_1':
                 continue
-            # if row.patientId in filter_patientIds:
-            #     continue
             if row.kfb_source == 'WXL_1':
                 pos_patch_list = process_pos_slide_wxl(row)
             else:
@@ -228,35 +228,23 @@ def gene_patch_json():
             })
         print(f'{mode}: {total_pos_nums} pos patches.')
 
-        with open(f'{ann_save_dir}/{mode}_0428_partial_pos.json', 'w') as f:
+        with open(f'{ann_save_dir}/partial_{mode}_pos_{PATCH_EDGE}.json', 'w') as f:
             json.dump(all_patch_list, f)
-
-def contrast_list():
-    img_save_dir = 'data_resource/0416/images/partial_pos_omitted'
-    os.makedirs(img_save_dir, exist_ok=True)
-
-    for mode in ['train', 'val']:
-        old_img_names = {}
-        with open(f'{ann_save_dir}/{mode}_partial_pos.json', 'r', encoding='utf-8') as f:
-            old_json_data = json.load(f)
-        with open(f'{ann_save_dir}/{mode}_0428_partial_pos.json', 'r', encoding='utf-8') as f:
-            new_json_data = json.load(f)
-    
-        for rowInfo in old_json_data:
-            for patchInfo in rowInfo['patch_list']:
-                old_img_names[patchInfo['filename']] = patchInfo
-        
-        for kfbinfo in new_json_data:
-            for patchinfo in kfbinfo['patch_list']:
-                if patchinfo['filename'] not in old_img_names.keys():
-                    slide = KFBSlide(kfbinfo["kfb_path"])
-                    x1,y1 = patchinfo['square_x1y1']
-                    location, level, size = (x1,y1), LEVEL, (PATCH_EDGE,PATCH_EDGE)
-                    read_result = Image.fromarray(slide.read_region(location, level, size))
-                    read_result.save(f'{img_save_dir}/{patchinfo["filename"]}')
     
 
 def cut_save(kfb_list):
+    from cerwsi.nets import ValidClsNet
+
+    device = torch.device('cuda:0')
+    valid_model_ckpt = 'checkpoints/valid_cls_best.pth'
+    valid_model = ValidClsNet()
+    valid_model.to(device)
+    valid_model.eval()
+    valid_model.load_state_dict(torch.load(valid_model_ckpt))
+
+    img_save_dir = f'data_resource/0429_2/{PATCH_EDGE}/images/partial_pos'
+    os.makedirs(img_save_dir, exist_ok=True)
+
     for kfbinfo in tqdm(kfb_list, ncols=80):
         slide = KFBSlide(kfbinfo["kfb_path"])
         patch_list = kfbinfo['patch_list']
@@ -264,11 +252,21 @@ def cut_save(kfb_list):
             x1,y1 = patchinfo['square_x1y1']
             location, level, size = (x1,y1), LEVEL, (PATCH_EDGE,PATCH_EDGE)
             read_result = Image.fromarray(slide.read_region(location, level, size))
-            read_result.save(f'{img_save_dir}/{patchinfo["filename"]}')
+            data_batch = dict(inputs=[], data_samples=[])
+            img_input = cv2.cvtColor(np.array(read_result), cv2.COLOR_RGB2BGR)
+            img_input = torch.as_tensor(cv2.resize(img_input, (224,224)))
+            data_batch['inputs'].append(img_input.permute(2,0,1))    # (bs, 3, h, w)
+            data_batch['data_samples'].append(DataSample())
+            data_batch['inputs'] = torch.stack(data_batch['inputs'], dim=0)
+            with torch.no_grad():
+                outputs = valid_model.val_step(data_batch)
+            if max(outputs[0].pred_score) > CERTAIN_THR and outputs[0].pred_label == 1:
+                read_result.save(f'{img_save_dir}/{patchinfo["filename"]}')
 
 def cut_patch():
+
     for mode in ['train', 'val']:
-        with open(f'{ann_save_dir}/{mode}_partial_pos.json', 'r') as f:
+        with open(f'{ann_save_dir}/partial_{mode}_pos_{PATCH_EDGE}.json', 'r') as f:
             kfb_list = json.load(f)
         
         cpu_num = 8
@@ -374,24 +372,24 @@ parser.add_argument('--data_root_dir', type=str, default='/medical-data/data')
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    ann_save_dir = 'data_resource/0416/annofiles'
-    img_save_dir = 'data_resource/0416/images/partial_pos'
+    
+    
+    ann_save_dir = 'data_resource/0429_2/annofiles'
+    img_save_dir = f'data_resource/0429_2/{PATCH_EDGE}/images/partial_pos'
     os.makedirs(img_save_dir, exist_ok=True)
     # gene_patch_json()
-    # cut_patch()
-    contrast_list()
+    # multiprocessing.set_start_method('spawn', force=True)
+    cut_patch()
 
 
 '''
-python scripts/0416/slide_cut_0403_pos.py \
-    data_resource/0416/annofiles/train.csv \
-    data_resource/0416/annofiles/val.csv
+python scripts/0429_2/partial_pos_slide_cut.py \
+    data_resource/0429_2/annofiles/partial_train.csv \
+    data_resource/0429_2/annofiles/partial_val.csv
 
-train: 66891 pos patches.
-val: 18144 pos patches.
-total: 85035 pos patches.
+512
+train: train: 46947 pos patches.
+val: val: 15128 pos patches.
+total: 62075 pos patches.
 
--roi_slide
-train: 31103 pos patches.
-val: 9361 pos patches.
 '''

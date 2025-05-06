@@ -112,11 +112,9 @@ def process_pos_slide(rowInfo):
                 pos_patches_result[patchid]['bboxes'].append(coord)
                 pos_patches_result[patchid]['clsnames'].append(sub_class)
     
-    pos_patch_list = filter_patch_list(pos_patches_result.values())
-    
     # 确保每个patch中至少有一个阳性标注框
     keep_patches = []
-    for patchInfo in pos_patch_list:
+    for patchid,patchInfo in pos_patches_result.items():
         unique_clsnames = list(set(patchInfo['clsnames']))
         if patchInfo['filename'] == 'JFSW_1_94_361.png':
             print()
@@ -173,8 +171,8 @@ def process_pos_slide_wxl(rowInfo):
             else:
                 patches_result[patchid]['bboxes'].append(coord)
                 patches_result[patchid]['clsnames'].append(sub_class)
-    pos_patch_list = filter_patch_list(list(patches_result.values()))
-    return pos_patch_list
+    
+    return list(patches_result.values())
 
 def filter_roi_slide():
     invalid_pids = [
@@ -215,10 +213,13 @@ def gene_patch_json():
                 continue
             # if row.patientId in filter_patientIds:
             #     continue
+            if row.patientId != 'JFSW_2_104':
+                continue
             if row.kfb_source == 'WXL_1':
                 pos_patch_list = process_pos_slide_wxl(row)
             else:
                 pos_patch_list = process_pos_slide(row)
+            pos_patch_list = filter_patch_list(pos_patch_list)
 
             total_pos_nums += len(pos_patch_list)
             all_patch_list.append({
@@ -228,33 +229,8 @@ def gene_patch_json():
             })
         print(f'{mode}: {total_pos_nums} pos patches.')
 
-        with open(f'{ann_save_dir}/{mode}_0428_partial_pos.json', 'w') as f:
-            json.dump(all_patch_list, f)
-
-def contrast_list():
-    img_save_dir = 'data_resource/0416/images/partial_pos_omitted'
-    os.makedirs(img_save_dir, exist_ok=True)
-
-    for mode in ['train', 'val']:
-        old_img_names = {}
-        with open(f'{ann_save_dir}/{mode}_partial_pos.json', 'r', encoding='utf-8') as f:
-            old_json_data = json.load(f)
-        with open(f'{ann_save_dir}/{mode}_0428_partial_pos.json', 'r', encoding='utf-8') as f:
-            new_json_data = json.load(f)
-    
-        for rowInfo in old_json_data:
-            for patchInfo in rowInfo['patch_list']:
-                old_img_names[patchInfo['filename']] = patchInfo
-        
-        for kfbinfo in new_json_data:
-            for patchinfo in kfbinfo['patch_list']:
-                if patchinfo['filename'] not in old_img_names.keys():
-                    slide = KFBSlide(kfbinfo["kfb_path"])
-                    x1,y1 = patchinfo['square_x1y1']
-                    location, level, size = (x1,y1), LEVEL, (PATCH_EDGE,PATCH_EDGE)
-                    read_result = Image.fromarray(slide.read_region(location, level, size))
-                    read_result.save(f'{img_save_dir}/{patchinfo["filename"]}')
-    
+        # with open(f'{ann_save_dir}/{mode}_partial_pos.json', 'w') as f:
+        #     json.dump(all_patch_list, f)
 
 def cut_save(kfb_list):
     for kfbinfo in tqdm(kfb_list, ncols=80):
@@ -305,31 +281,6 @@ def filter_patch_list(kfb_patch_list):
     2. 若阴性框内部有阳性框，丢弃阴性框保留阳性框
     '''
 
-    def deduplicate_bboxes(bboxes, clsnames, tolerance=5):
-        """
-        去重 bbox 列表，允许坐标有小误差（比如5px内）
-        
-        Args:
-            bboxes: (n,4) numpy array，格式是 [x1, y1, x2, y2]
-            tolerance: 允许的坐标误差
-        Returns:
-            filtered_bboxes: 去重后的 bbox numpy array
-        """
-        bboxes = np.array(bboxes)
-        kept_bboxes,kept_clsname = [],[]
-
-        for bbox,cname in zip(bboxes, clsnames):
-            is_duplicate = False
-            for kept_bbox in kept_bboxes:
-                if np.all(np.abs(bbox - kept_bbox) <= tolerance):
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                kept_bboxes.append(bbox)
-                kept_clsname.append(cname)
-        
-        return kept_bboxes,kept_clsname
-
     def pos_box_enclosured(bbox, all_bboxes):
         for parent_bbox in all_bboxes:
             if bbox[0] == parent_bbox[0] and bbox[1] == parent_bbox[1] and bbox[2] == parent_bbox[2] and bbox[3] == parent_bbox[3]:
@@ -348,14 +299,13 @@ def filter_patch_list(kfb_patch_list):
     for patchinfo in kfb_patch_list:
         if len(patchinfo['bboxes']) != 1:
             new_bboxes,nes_clsnames = [],[]
-            filtered_bboxes,filtered_clsnames = deduplicate_bboxes(patchinfo['bboxes'], patchinfo['clsnames'], tolerance=5)
-            posboxes = [box for box,clsn in zip(filtered_bboxes,filtered_clsnames) if clsn in POSITIVE_CLASS]
-            for bbox,clsname in zip(filtered_bboxes,filtered_clsnames):
-                if clsname in POSITIVE_CLASS and pos_box_enclosured(bbox, posboxes):
+            posboxes = [box for box,clsn in zip(patchinfo['bboxes'], patchinfo['clsnames']) if clsn in POSITIVE_CLASS]
+            for bbox,clsname in zip(patchinfo['bboxes'], patchinfo['clsnames']):
+                if clsname in POSITIVE_CLASS and pos_box_enclosured(bbox, patchinfo['bboxes']):
                     continue
                 if clsname in NEGATIVE_CLASS and has_posbox_inside(bbox, posboxes):
                     continue
-                new_bboxes.append(bbox.tolist())
+                new_bboxes.append(bbox)
                 nes_clsnames.append(clsname)
             patchinfo['bboxes'] = new_bboxes
             patchinfo['clsnames'] = nes_clsnames
@@ -364,6 +314,7 @@ def filter_patch_list(kfb_patch_list):
             new_patch_list.append(patchinfo)
 
     return new_patch_list
+
 
 
 parser = argparse.ArgumentParser()
@@ -377,9 +328,8 @@ if __name__ == '__main__':
     ann_save_dir = 'data_resource/0416/annofiles'
     img_save_dir = 'data_resource/0416/images/partial_pos'
     os.makedirs(img_save_dir, exist_ok=True)
-    # gene_patch_json()
+    gene_patch_json()
     # cut_patch()
-    contrast_list()
 
 
 '''
@@ -387,11 +337,11 @@ python scripts/0416/slide_cut_0403_pos.py \
     data_resource/0416/annofiles/train.csv \
     data_resource/0416/annofiles/val.csv
 
-train: 66891 pos patches.
-val: 18144 pos patches.
-total: 85035 pos patches.
+train: 66808 pos patches.
+val: 18118 pos patches.
+total: 84926 pos patches.
 
 -roi_slide
-train: 31103 pos patches.
-val: 9361 pos patches.
+train: 31032 pos patches.
+val: 9341 pos patches.
 '''

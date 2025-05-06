@@ -3,11 +3,12 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import os
+from natsort import natsorted
 from PIL import Image
 from cerwsi.utils import KFBSlide,kfbslide_get_associated_image_names,kfbslide_read_associated_image
 
 def img2pid():
-    partial_pos = os.listdir('/c22073/zly/datasets/CervicalDatasets/LCerScanv4/images/partial_pos')
+    partial_pos = os.listdir('data_resource/0416/images/partial_pos')
 
     pId_imgs = defaultdict(list)
     for filename in tqdm(partial_pos, ncols=80):
@@ -26,7 +27,7 @@ def img2pid():
     return pId_imgs
 
 def main(pId_imgs):
-    data_root_dir = '/c22073/zly/datasets/CervicalDatasets/LCerScanv4/annofiles'
+    data_root_dir = 'data_resource/0416/annofiles'
     for mode in ['train','val']:
         csv_file = f'{data_root_dir}/{mode}.csv'
         df_data = pd.read_csv(csv_file)
@@ -56,13 +57,40 @@ def extract_pathology_info():
                 print(f'No label!')
                 continue
             image = kfbslide_read_associated_image(slide._osr, 'label')
-            rotated_image = image.transpose(Image.ROTATE_270)  # 右旋90°
             output_path = f'{label_save_dir}/{row.patientId}.png'
-            rotated_image.save(output_path)
+            image.save(output_path)
 
-            low_valued_extractinfo.append([row.patientId, '', ''])
-        df_low_valued_extractinfo = pd.DataFrame(low_valued_extractinfo, columns=['patientId', 'pathology_number', 'time'])
+            image = kfbslide_read_associated_image(slide._osr, 'thumbnail')
+            output_path = f'{thumbnail_save_dir}/{row.patientId}.png'
+            image.save(output_path)
+
+            low_valued_extractinfo.append([row.patientId, row.kfb_clsname, '', 0])
+        df_low_valued_extractinfo = pd.DataFrame(low_valued_extractinfo, columns=['patientId', 'kfb_clsname', 'pathology_number', 'year'])
+        df_low_valued_extractinfo = df_low_valued_extractinfo.loc[
+            natsorted(df_low_valued_extractinfo.index, key=lambda i: df_low_valued_extractinfo.loc[i, 'patientId'])
+        ]
         df_low_valued_extractinfo.to_csv(f'{save_dir}/extractinfo_{mode}.csv', index=False)
+
+def filter_csv():
+    anno_slide = []
+    for mode in ['train','val']:
+        new_mode_row = []
+        df_data = pd.read_csv(f'{save_dir}/extractinfo_{mode}.csv')
+        remove_pids = df_data[df_data['year'] == 0]['patientId'].tolist()
+        anno_pids = df_data[df_data['year'] > 0]['patientId'].tolist()
+
+        df_mode = pd.read_csv(f'data_resource/0416/annofiles/{mode}.csv')
+        for row in tqdm(df_mode.itertuples(index=False), total=len(df_mode), ncols=80):
+            if row.patientId not in remove_pids:
+                new_mode_row.append(row)
+            if row.patientId in anno_pids:
+                anno_slide.append(row)
+        df_new_mode = pd.DataFrame(new_mode_row, columns=df_mode.columns)
+        df_new_mode.to_csv(f'data_resource/0416/annofiles/{mode}_0422.csv', index=False)
+    
+    df_anno_slide = pd.DataFrame(anno_slide, columns=df_mode.columns)  
+    df_anno_slide.to_csv('data_resource/0416/annofiles/0422_slide_anno.csv', index=False)
+    
 
 if __name__ == "__main__":
     save_dir = 'statistic_results/0416/low_valued_nums'
@@ -70,6 +98,11 @@ if __name__ == "__main__":
     # pId_imgs = img2pid()
     # main(pId_imgs)
 
-    label_save_dir = 'statistic_results/0416/pathology_info'
-    os.makedirs(label_save_dir, exist_ok=True)
-    extract_pathology_info()
+    # label_save_dir = 'statistic_results/0416/pathology_info'
+    # thumbnail_save_dir = 'statistic_results/0416/pathology_thumbnail'
+    # os.makedirs(label_save_dir, exist_ok=True)
+    # os.makedirs(thumbnail_save_dir, exist_ok=True)
+    # extract_pathology_info()
+
+    # 生成要给医生标注的csv，从train和val中删除剩下的，标注数量少的 slide
+    filter_csv()

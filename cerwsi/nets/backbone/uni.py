@@ -45,7 +45,7 @@ class UNI(MetaBackbone):
     def forward(self, x: torch.Tensor):
         output = self.backbone.forward_features(x)
         output = output[:,1:,:]  # (bs, num_tokens, C)
-        return output
+        return output.transpose(1,2)
     
     def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
         B, H, W, C = x.shape

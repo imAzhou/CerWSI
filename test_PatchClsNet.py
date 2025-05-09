@@ -131,8 +131,8 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12341 test_PatchClsNet.py \
-    log/l_cerscanv1/wscer_partial/2025_05_07_00_07_02/config.py \
-    log/l_cerscanv1/wscer_partial/2025_05_07_00_07_02/checkpoints/epoch_49.pth \
-    log/l_cerscanv1/wscer_partial/2025_05_07_00_07_02
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12341 test_PatchClsNet.py \
+    log/l_cerscanv1/wscer_partial/config.py \
+    log/l_cerscanv1/wscer_partial/epoch_39.pth \
+    log/l_cerscanv1/wscer_partial
 '''

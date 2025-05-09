@@ -87,14 +87,8 @@ def train_net(cfg, model, model_without_ddp):
                 pbar.close()
                 if cfg.save_each_epoch:
                     torch.save(model_without_ddp.state_dict(), f'{files_save_dir}/checkpoints/epoch_{epoch}.pth')
-                
-                if 'img_accuracy' in metrics:
-                    prime_score = metrics['img_accuracy']
-                else:
-                    acc = metrics['multi-label/img_accuracy']
-                    sens = metrics['multi-label/img_sensitivity']
-                    spec = metrics['multi-label/img_specificity']
-                    prime_score = acc + sens + spec
+                prime_score_type = cfg.eval_prime_score
+                prime_score = metrics[prime_score_type]
                 if prime_score > max_acc:
                     max_acc = prime_score
                     print(f'Best score update: {prime_score}.')
@@ -138,9 +132,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 torchrun  --nproc_per_node=6 --master_port=1234
     configs/strategy.py \
     --record_save_dir log/l_cerscanv1/wscer_partial
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 torchrun  --nproc_per_node=6 --master_port=12340 main4PatchClsNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12340 main4PatchClsNet.py \
     configs/dataset/l_cerscanv1_dataset.py \
-    configs/model/wscer_partial.py \
+    configs/model/uni.py \
     configs/strategy.py \
-    --record_save_dir log/debug
+    --record_save_dir log/l_cerscanv1/uni_cls6
 '''

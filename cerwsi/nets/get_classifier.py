@@ -1,4 +1,5 @@
 from .classifier.binary_linear import BinaryLinear
+from .classifier.multicls_linear import MultiClsLinear
 from .classifier.mlc_linear import MLCLinear
 from .classifier.chief import CHIEF
 from .classifier.ml_decoder import MLDecoder
@@ -6,10 +7,10 @@ from .classifier.query2label import Query2Label
 from .classifier.SVT_classifier import SVTClassifier
 from .classifier.wscer_mlc import WSCerMLC
 from .classifier.wscer_binary import WSCerBinary
-from .classifier.wscer_partial import WSCerPartial
+# from .classifier.wscer_partial import WSCerPartial
 from .classifier.wscer_alltoken import WSCerAllToken
 
-allowed_classifier_type = ['binary_linear', 'mlc_linear', 'chief', 'ml_decoder', 'query2label', 'svt',
+allowed_classifier_type = ['binary_linear', 'multicls_linear', 'mlc_linear', 'chief', 'ml_decoder', 'query2label', 'svt',
                            'wscer_mlc', 'wscer_binary', 'wscer_partial', 'wscer_alltoken']
 
 def get_classifier(args):
@@ -19,6 +20,8 @@ def get_classifier(args):
     classifier = None
     if classifier_type == 'binary_linear':
         classifier = BinaryLinear
+    if classifier_type == 'multicls_linear':
+        classifier = MultiClsLinear
     if classifier_type == 'mlc_linear':
         classifier = MLCLinear
     if classifier_type == 'chief':
@@ -34,8 +37,8 @@ def get_classifier(args):
         classifier = WSCerMLC
     if classifier_type == 'wscer_binary':
         classifier = WSCerBinary
-    if classifier_type == 'wscer_partial':
-        classifier = WSCerPartial
+    # if classifier_type == 'wscer_partial':
+    #     classifier = WSCerPartial
     if classifier_type == 'wscer_alltoken':
         classifier = WSCerAllToken
     

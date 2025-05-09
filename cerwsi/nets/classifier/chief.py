@@ -35,7 +35,7 @@ class Attn_Net_Gated(nn.Module):
 class CHIEF(MetaClassifier):
     def __init__(self, args):
         num_classes = 1 # 只能做阴阳二分类
-        evaluator = build_evaluator([BinaryMetric(thr = args.positive_thr)])
+        evaluator = build_evaluator([BinaryMetric(args.logger_name, thr = args.positive_thr)])
         super(CHIEF, self).__init__(evaluator, **args)
 
         self.size_dict = {

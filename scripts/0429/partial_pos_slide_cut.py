@@ -20,8 +20,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules
 
 CERTAIN_THR = 0.7
 LEVEL = 0
-PATCH_EDGE = 512
-STRIDE = 450
+PATCH_EDGE = 224
+STRIDE = 200
 NEGATIVE_CLASS = ['NILM', 'GEC']
 POSITIVE_CLASS = ['ASC-US', 'LSIL', 'ASC-H', 'HSIL', 'SCC', 'AGC-NOS', 'AGC', 'AGC-N', 'AGC-FN']
 
@@ -242,7 +242,7 @@ def cut_save(kfb_list):
     valid_model.eval()
     valid_model.load_state_dict(torch.load(valid_model_ckpt))
 
-    img_save_dir = f'data_resource/0429_2/{PATCH_EDGE}/images/partial_pos'
+    img_save_dir = f'data_resource/0429/{PATCH_EDGE}/images/partial_pos'
     os.makedirs(img_save_dir, exist_ok=True)
 
     for kfbinfo in tqdm(kfb_list, ncols=80):
@@ -373,23 +373,27 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     
-    
-    ann_save_dir = 'data_resource/0429_2/annofiles'
-    img_save_dir = f'data_resource/0429_2/{PATCH_EDGE}/images/partial_pos'
+    ann_save_dir = 'data_resource/0429/annofiles'
+    img_save_dir = f'data_resource/0429/{PATCH_EDGE}/images/partial_pos'
     os.makedirs(img_save_dir, exist_ok=True)
     # gene_patch_json()
-    # multiprocessing.set_start_method('spawn', force=True)
+    multiprocessing.set_start_method('spawn', force=True)
     cut_patch()
 
 
 '''
-python scripts/0429_2/partial_pos_slide_cut.py \
-    data_resource/0429_2/annofiles/partial_train.csv \
-    data_resource/0429_2/annofiles/partial_val.csv
+python scripts/0429/partial_pos_slide_cut.py \
+    data_resource/0429/annofiles/partial_train.csv \
+    data_resource/0429/annofiles/partial_val.csv
 
 512
-train: train: 46947 pos patches.
-val: val: 15128 pos patches.
+train: 46947 pos patches.  →  46460
+val: 15128 pos patches.  →  14957
 total: 62075 pos patches.
 
+
+224
+train: 78887 pos patches.  →  76682
+val: 27315 pos patches.  →  26513
+total: 106202 pos patches.
 '''

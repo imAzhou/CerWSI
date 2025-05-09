@@ -82,6 +82,8 @@ class Instance_branch(nn.Module):
             input_image_size=(self.img_input_size, self.img_input_size),
             mask_in_chans=16,
         )
+        for name, param in self.sam_prompt_encoder.named_parameters():
+            param.requires_grad = False
 
         self.conv_s0 = nn.Conv2d(transformer_dim, transformer_dim // 8, kernel_size=1, stride=1)
         self.conv_s1 = nn.Conv2d(transformer_dim, transformer_dim // 4, kernel_size=1, stride=1)
@@ -114,7 +116,6 @@ class Instance_branch(nn.Module):
         if pretrain_ckpt is not None:
             self.load_ckpt(pretrain_ckpt)
         
-        
     def load_ckpt(self, pretrain_ckpt):
         """load ckpt from sam2"""
         params_weight = torch.load(pretrain_ckpt, map_location="cpu", weights_only=True)["model"]
@@ -133,9 +134,9 @@ class Instance_branch(nn.Module):
         load_result = self.load_state_dict(state_dict, strict=False)
         print('Load decoder from SAM2: ' + str(load_result))
 
-    def forward(self, dict_inputs):
+    def forward(self, dict_inputs, mask_input=None):
         """
-        Predicts masks. See 'forward' for more details. 
+        mask_input: can be logits which shape is (bs, 1, H, W) where for SAM, H=W=image_embed HW.
 
         Returns:
             masks: (bs, num_instance_queries, h, w)
@@ -147,7 +148,6 @@ class Instance_branch(nn.Module):
         image_embed = image_embed + self.no_mem_embed
         image_embed = image_embed.permute(1, 2, 0).view(batch_size, -1, lowest_h, lowest_w)    # NxCxHxW
         
-        mask_input = None   # can be logits which shape is (bs, 1, H, W) where for SAM, H=W=256.
         sparse_embeddings, dense_embeddings = self.sam_prompt_encoder(
             points=None,
             boxes=None,
@@ -190,14 +190,14 @@ class Instance_branch(nn.Module):
 
         return masks, cls_pred
 
-    def loss(self, dict_inputs: dict, databatch):
+    def loss(self, dict_inputs: dict, databatch, mask_input=None):
         '''
         dict_inputs: dict, 
             vision_features: Tensor, (bs, c, h, w)
             vision_pos_enc: List[Tensor]: [bs, c, h1,w1]...
             backbone_fpn: List[Tensor]: [bs, c, h1,w1]...
         '''
-        pred_mask_logits, pred_cls_logits = self(dict_inputs)
+        pred_mask_logits, pred_cls_logits = self(dict_inputs, mask_input)
         num_imgs, _, logit_h, logit_w = pred_mask_logits.shape
 
         device = pred_cls_logits.device
@@ -410,11 +410,13 @@ class Instance_branch(nn.Module):
         # label target
         labels = gt_labels.new_full((self.instance_queries, ),0,dtype=torch.long)
         labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds]
-        if img_meta['prefix'] == 'partial_pos':
-            label_weights = gt_labels.new_zeros((self.instance_queries, ))
-            label_weights[pos_inds] = 1
-        else:
-            label_weights = gt_labels.new_ones((self.instance_queries, ))
+        
+        # if img_meta['prefix'] == 'partial_pos':
+        #     label_weights = gt_labels.new_zeros((self.instance_queries, ))
+        #     label_weights[pos_inds] = 1
+        # else:
+        #     label_weights = gt_labels.new_ones((self.instance_queries, ))
+        label_weights = gt_labels.new_ones((self.instance_queries, ))
 
         # mask target
         mask_targets = gt_masks[sampling_result.pos_assigned_gt_inds]
@@ -424,14 +426,14 @@ class Instance_branch(nn.Module):
         return (labels, label_weights, mask_targets, mask_weights, pos_inds,
                 neg_inds, sampling_result)
 
-    def predict(self, dict_inputs: dict, databatch, iou_threshold=0.7):
+    def predict(self, dict_inputs: dict, databatch,mask_input=None, iou_threshold=0.7):
         """
         dict_inputs: dict, 
             vision_features: Tensor, (bs, c, h, w)
             vision_pos_enc: List[Tensor]: [bs, c, h1,w1]...
             backbone_fpn: List[Tensor]: [bs, c, h1,w1]...
         """
-        pred_mask_logits, pred_cls_logits = self(dict_inputs)
+        pred_mask_logits, pred_cls_logits = self(dict_inputs, mask_input)
         bs = databatch['images'].shape[0]
         pred_bboxes = []
 
@@ -453,7 +455,7 @@ class Instance_branch(nn.Module):
             # 3. mask logits resize到(H, W)，再 sigmoid + 二值化
             ori_size = databatch['metainfo'][i]['origin_size']
             mask_logits_resized = F.interpolate(mask_logits.unsqueeze(1), size=ori_size, mode='bilinear', align_corners=False).squeeze(1)  # (num_keep, H, W)
-            masks = (mask_logits_resized.sigmoid() > 0.5).float()
+            masks = mask_logits_resized.sigmoid() > 0.5
 
             # 4. 过滤掉空 mask
             valid = masks.flatten(1).sum(dim=1) > 0  # (num_keep,), mask有前景的
@@ -481,7 +483,7 @@ class Instance_branch(nn.Module):
                 x1, y1, x2, y2 = box.tolist()
                 image_boxes.append({
                     'bbox': [x1, y1, x2, y2],
-                    'mask': mask,
+                    # 'mask': mask.detach().cpu(),
                     'score': score.item(),
                     'cls': label.item()
                 })

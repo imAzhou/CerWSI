@@ -210,6 +210,7 @@ def process_patches(proc_id, start_points, valid_model, pn_model, kfb_path, pati
 def get_pn_model(device):
     cfg = Config.fromfile(args.config_file)
     cfg.backbone_cfg['backbone_ckpt'] = None
+    cfg.instance_ckpt = None
     model = PatchClsNet(cfg).to(device)
     model.load_ckpt(args.ckpt)
     model.eval()

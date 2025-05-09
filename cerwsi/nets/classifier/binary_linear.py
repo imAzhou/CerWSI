@@ -9,7 +9,7 @@ class BinaryLinear(MetaClassifier):
     def __init__(self, **args):
         input_embed_dim = args.input_embed_dim
         self.num_classes = args.num_classes
-        evaluator = build_evaluator([BinaryMetric(thr = args.positive_thr)])
+        evaluator = build_evaluator([BinaryMetric(args.logger_name, thr = args.positive_thr)])
         super(BinaryLinear, self).__init__(evaluator, **args)
 
         self.cls_linear_head = nn.Linear(input_embed_dim, 1)
@@ -22,7 +22,10 @@ class BinaryLinear(MetaClassifier):
         img_pn_logit = self.calc_logits(feature_emb)
         img_gt = databatch['image_labels'].to(self.device).unsqueeze(-1).float()
         pn_loss = F.binary_cross_entropy_with_logits(img_pn_logit, img_gt, reduction='mean')
-        return pn_loss
+        loss_dict = {
+            'pn_loss': pn_loss.item(),
+        }
+        return pn_loss,loss_dict
 
     def set_pred(self,feature_emb, databatch):
         img_pn_logit = self.calc_logits(feature_emb) # (bs, num_classes-1)

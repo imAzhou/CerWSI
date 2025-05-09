@@ -52,7 +52,7 @@ class BinaryClsBranch(nn.Module):
         A = F.softmax(A, dim=-1)
         cls_feature = torch.bmm(A, h)    # cls_feature: (bs, 1, c=512)
         out = self.classifiers(cls_feature)    # (bs, 1, 1)
-        return out.squeeze(-1), A.squeeze(1)
+        return out.squeeze(-1), A.squeeze(1).detach().cpu()
 
     def loss(self, vision_features: torch.Tensor, databatch):
         '''

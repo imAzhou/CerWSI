@@ -27,7 +27,7 @@ class WSCerPartial(MetaClassifier):
             vision_pos_enc: List[Tensor]: [bs, c, h1,w1]...
             backbone_fpn: List[Tensor]: [bs, c, h1,w1]...
         '''
-        img_loss,_ = self.binary_cls_branch.loss(dict_inputs['vision_features'], databatch)
+        img_loss = self.binary_cls_branch.loss(dict_inputs['vision_features'], databatch)
         instance_loss_dict = self.instance_branch.loss(dict_inputs, databatch)
         loss = img_loss
         loss_dict = {'img_loss': img_loss.item()}

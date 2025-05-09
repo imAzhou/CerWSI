@@ -6,7 +6,7 @@ from .backbone.uni import UNI
 from .backbone.ctranspath import CTransPath
 from .backbone.SVT_backbone import SVTBackbone
 from .backbone.SAM_backbone import SAMEncoder
-from .backbone.SAM2_backbone import SAM2Encoder
+# from .backbone.SAM2_backbone import SAM2Encoder
 
 allowed_backbone_type = ['resnet', 'convnext', 'vit', 
                          'dinov2', 'uni', 'ctranspath', 'svt', 'sam', 'sam2']
@@ -32,7 +32,7 @@ def get_backbone(args):
         backbone = SVTBackbone
     if backbone_type == 'sam':
         backbone = SAMEncoder
-    if backbone_type == 'sam2':
-        backbone = SAM2Encoder
+    # if backbone_type == 'sam2':
+    #     backbone = SAM2Encoder
     
     return backbone(args)

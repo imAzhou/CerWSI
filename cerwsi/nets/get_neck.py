@@ -10,7 +10,7 @@ def get_neck(args):
     
     neck = None
     if neck_type == 'avg':
-        neck = GlobalAveragePooling()
+        neck = GlobalAveragePooling(dim=args.avg_dim)
     if neck_type == 'identity':
         neck = nn.Identity()
     if neck_type == 'conv':

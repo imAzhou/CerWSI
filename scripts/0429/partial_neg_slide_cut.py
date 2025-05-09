@@ -15,26 +15,26 @@ from tqdm import tqdm
 
 LEVEL = 0
 CERTAIN_THR = 0.7
-PATCH_EDGE = 512
-cut_nums_each = 40
-img_save_dir = f'data_resource/0429_2/{PATCH_EDGE}/images/neg'
+PATCH_EDGE = 224
+cut_nums_each = 80
+img_save_dir = f'data_resource/0429/{PATCH_EDGE}/images/neg'
 os.makedirs(img_save_dir, exist_ok=True)
-anno_save_dir = 'data_resource/0429_2/annofiles'
+anno_save_dir = 'data_resource/0429/annofiles'
 os.makedirs(anno_save_dir, exist_ok=True)
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.conv")
 
 def cut_random_neg():
-    device = torch.device('cuda:2')
+    device = torch.device('cuda:0')
     valid_model_ckpt = 'checkpoints/valid_cls_best.pth'
     valid_model = ValidClsNet()
     valid_model.to(device)
     valid_model.eval()
     valid_model.load_state_dict(torch.load(valid_model_ckpt))
 
-    train_csv = pd.read_csv('data_resource/0416/annofiles/train.csv')
-    val_csv = pd.read_csv('data_resource/0416/annofiles/val.csv')
+    train_csv = pd.read_csv('data_resource/0429/annofiles/train.csv')
+    val_csv = pd.read_csv('data_resource/0429/annofiles/val.csv')
     filtered = {
         'train': train_csv[train_csv['kfb_clsid'] == 0],
         'val': val_csv[val_csv['kfb_clsid'] == 0],
@@ -80,7 +80,7 @@ def cut_random_neg():
                         'prefix': 'neg',
                         'diagnose': 0,
                     })
-                    # read_result.save(f'{img_save_dir}/{filename}')
+                    read_result.save(f'{img_save_dir}/{filename}')
 
             t_delta = time.time() - start_time
             print(f'[{r_idx+1}/{total_nums}] {patientId} cut nums: {len(slide_patch_list)}, cost: {t_delta:0.2f}s')
@@ -97,12 +97,12 @@ def cut_random_neg():
         
         print(f'{mode}: {total_patches} patches. \n')
         txt_records.append(f'{mode}: {total_patches} patches. \n')
-        with open(f'{anno_save_dir}/{mode}_neg_patch_nums.txt', 'w') as f:
+        with open(f'{anno_save_dir}/{mode}_neg_patch_nums_{PATCH_EDGE}.txt', 'w') as f:
             f.writelines(txt_records)
             f.writelines(f"{'='*20} \n\n\n")
             f.writelines(low_valid_records)
 
-        with open(f'{anno_save_dir}/{mode}_negslide_patches.json', 'w') as f:
+        with open(f'{anno_save_dir}/{mode}_negslide_patches_{PATCH_EDGE}.json', 'w') as f:
             json.dump(all_patch_list, f)
 
 if __name__ == '__main__':

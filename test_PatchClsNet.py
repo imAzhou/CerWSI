@@ -111,7 +111,8 @@ def main():
 
     cfg = Config.fromfile(args.config_file)
     cfg.save_result_dir = args.save_dir
-    
+    cfg.backbone_cfg['backbone_ckpt'] = None
+    cfg.instance_ckpt = None
     model = PatchClsNet(cfg).to(device)
     model_without_ddp = model
 
@@ -130,8 +131,8 @@ if __name__ == '__main__':
     # analyze(f'{args.save_dir}/pred_results_0.5.json')
 
 '''
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun  --nproc_per_node=4 --master_port=12341 test_PatchClsNet.py \
-    log/l_cerscanv4/wscer_partial_pure/2025_04_29_17_37_52/config.py \
-    log/l_cerscanv4/wscer_partial_pure/2025_04_29_17_37_52/checkpoints/best.pth \
-    log/l_cerscanv4/wscer_partial_pure/2025_04_29_17_37_52
+CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12341 test_PatchClsNet.py \
+    log/l_cerscanv1/wscer_partial/config.py \
+    log/l_cerscanv1/wscer_partial/epoch_39.pth \
+    log/l_cerscanv1/wscer_partial
 '''

@@ -481,7 +481,7 @@ class Instance_branch(nn.Module):
                 x1, y1, x2, y2 = box.tolist()
                 image_boxes.append({
                     'bbox': [x1, y1, x2, y2],
-                    'mask': mask,
+                    # 'mask': mask,
                     'score': score.item(),
                     'cls': label.item()
                 })

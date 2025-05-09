@@ -206,8 +206,8 @@ class Instance_branch(nn.Module):
             cls_scores_list.append(pred_cls_logits[i])
             mask_preds_list.append(pred_mask_logits[i])
             gt_instances = InstanceData()
-            img_label = databatch['image_labels'][i]
-            if img_label == 0:
+            # img_label = databatch['image_labels'][i]
+            if len(databatch['instance_mask'][i]) == 0:
                 gt_instances.masks = torch.empty((0, logit_h, logit_w), device=device).float()
                 gt_instances.labels = torch.empty((0,), device=device).long()
             else:
@@ -411,17 +411,16 @@ class Instance_branch(nn.Module):
         labels = gt_labels.new_full((self.instance_queries, ),0,dtype=torch.long)
         labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds]
         
-        # if img_meta['prefix'] == 'partial_pos':
-        #     label_weights = gt_labels.new_zeros((self.instance_queries, ))
-        #     label_weights[pos_inds] = 1
-        # else:
-        #     label_weights = gt_labels.new_ones((self.instance_queries, ))
-        label_weights = gt_labels.new_ones((self.instance_queries, ))
+        if img_meta['use_inst']:
+            label_weights = gt_labels.new_ones((self.instance_queries, ))
+        else:
+            label_weights = gt_labels.new_zeros((self.instance_queries, ))
 
         # mask target
         mask_targets = gt_masks[sampling_result.pos_assigned_gt_inds]
         mask_weights = mask_pred.new_zeros((self.instance_queries, ))
-        mask_weights[pos_inds] = 1.0
+        if img_meta['use_inst']:
+            mask_weights[pos_inds] = 1.0
 
         return (labels, label_weights, mask_targets, mask_weights, pos_inds,
                 neg_inds, sampling_result)

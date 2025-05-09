@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import math
+import torch.nn.functional as F
 from ..meta_classifier import MetaClassifier
 from cerwsi.utils import build_evaluator,ImgODMetric
 from .binary_cls_branch import BinaryClsBranch
@@ -33,11 +35,12 @@ class WSCerPartial(MetaClassifier):
         img_gt = databatch['image_labels'].unsqueeze(1).float()
         img_loss = binary_loss_fn(img_logits, img_gt)
         
-        filter_dict_inputs, filter_databatch, filter_binary_attnmap = self.filter4instance(
-            dict_inputs, databatch, binary_attnmap
-        )
-        instance_loss_dict = self.instance_branch.loss(
-            filter_dict_inputs, filter_databatch, filter_binary_attnmap)
+        bs,num_tokens = binary_attnmap.shape
+        feat_size = int(math.sqrt(num_tokens))
+        binary_attnmap = binary_attnmap.reshape((bs, feat_size, feat_size)).unsqueeze(1)
+        binary_attnmap = F.interpolate(binary_attnmap, size=(feat_size*4, feat_size*4), mode='nearest')
+        
+        instance_loss_dict = self.instance_branch.loss(dict_inputs, databatch, binary_attnmap)
         loss = img_loss
         loss_dict = {'img_loss': img_loss.item()}
         for key,value in instance_loss_dict.items():
@@ -45,27 +48,15 @@ class WSCerPartial(MetaClassifier):
             loss_dict[key] = value.item()
 
         return loss, loss_dict
-     
     
     def set_pred(self, dict_inputs, databatch):
         img_logits,binary_attnmap = self.binary_cls_branch(dict_inputs['vision_features'])
         databatch['img_probs'] = torch.sigmoid(img_logits)
-        databatch['binary_attnmap'] = binary_attnmap
-        filter_dict_inputs, filter_databatch, filter_binary_attnmap = self.filter4instance(
-            dict_inputs, databatch, binary_attnmap
-        )
-        databatch['pred_bbox'] = self.instance_branch.predict(
-            filter_dict_inputs, filter_databatch, filter_binary_attnmap)
-        return databatch
-
-    def filter4instance(self, dict_inputs, databatch, binary_attnmap):
-        new_dict_inputs, new_databatch, new_binary_attnmap = [],[],[]
-        for input,dataitem,attnmap in zip(dict_inputs, databatch, binary_attnmap):
-            if dataitem['use_inst']:
-                new_dict_inputs.append(input)
-                new_databatch.append(dataitem)
-                new_binary_attnmap.append(attnmap)
-        new_dict_inputs = torch.stack(new_dict_inputs, dim=0)
-        new_binary_attnmap = torch.stack(new_binary_attnmap, dim=0)
         
-        return new_dict_inputs,new_databatch,new_binary_attnmap
+        bs,num_tokens = binary_attnmap.shape
+        feat_size = int(math.sqrt(num_tokens))
+        binary_attnmap = binary_attnmap.reshape((bs, feat_size, feat_size)).unsqueeze(1)
+        databatch['binary_attnmap'] = binary_attnmap
+        binary_attnmap = F.interpolate(binary_attnmap, size=(feat_size*4, feat_size*4), mode='nearest')
+        databatch['pred_bbox'] = self.instance_branch.predict(dict_inputs, databatch, binary_attnmap)
+        return databatch

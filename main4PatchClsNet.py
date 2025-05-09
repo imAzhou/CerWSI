@@ -132,9 +132,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 torchrun  --nproc_per_node=6 --master_port=1234
     configs/strategy.py \
     --record_save_dir log/l_cerscanv1/wscer_partial
 
-CUDA_VISIBLE_DEVICES=0,1,2 torchrun  --nproc_per_node=3 --master_port=12340 main4PatchClsNet.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun  --nproc_per_node=8 --master_port=12346 main4PatchClsNet.py \
     configs/dataset/l_cerscanv1_dataset.py \
-    configs/model/uni.py \
+    configs/model/wscer_partial.py \
     configs/strategy.py \
-    --record_save_dir log/l_cerscanv1/uni_cls6
+    --record_save_dir log/debug
 '''

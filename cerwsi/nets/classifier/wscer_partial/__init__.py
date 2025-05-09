@@ -1,1 +1,1 @@
-from .v4 import WSCerPartial
+from .v5 import WSCerPartial
